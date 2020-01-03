@@ -1,6 +1,6 @@
 import React from 'react';
 import './App.css';
-import { AppBar, Grid, Tooltip, IconButton, Typography, Paper, TablePagination, TableContainer, Table, TableHead, TableBody, TableRow, TableCell, Toolbar } from '@material-ui/core';
+import { AppBar, Grid, Tooltip, IconButton, Typography, Paper, TableContainer, Table, TableHead, TableBody, TableRow, TableCell, Toolbar } from '@material-ui/core';
 import RefreshIcon from '@material-ui/icons/Refresh';
 import ExitToAppIcon from '@material-ui/icons/ExitToApp'
 import EmailViewer from './Viewer';

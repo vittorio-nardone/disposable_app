@@ -1,9 +1,7 @@
 import React from 'react';
-import { Typography, Backdrop, CircularProgress } from '@material-ui/core';
+import { Typography, CircularProgress } from '@material-ui/core';
 import parse from 'emailjs-mime-parser'
 import './App.css';
-import { makeStyles } from '@material-ui/core/styles';
-
 
 class EmailViewer extends React.Component {
     constructor(props) {
@@ -64,9 +62,10 @@ class EmailViewer extends React.Component {
                 <div style={
                     { overflow: 'auto', height: '100vh', display:"flex",
                     flexDirection: "column",
-                    justifyContent: "center", }}>
+                    justifyContent: "center",
+                    textAlign:"center" }}>
                 <Typography variant="body1" >
-                    <center>No mail selected</center>
+                    No mail selected
                 </Typography> 
                 </div>        
             )  
