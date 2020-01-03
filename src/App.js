@@ -18,11 +18,7 @@ class App extends React.Component {
   render() {
     if (this.state.address !== '') {
       return (
-         <div className="App-header">
-          {/* <header className="App-header"> */}
-            <EmailList address={this.state.address}/>
-          {/* </header> */}
-        </div>
+            <EmailList address={this.state.address} changeAddress={this.changeAddress.bind(this)}/>
       ); 
     } else {
       return (

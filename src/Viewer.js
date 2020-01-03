@@ -61,19 +61,32 @@ class EmailViewer extends React.Component {
     render() {
         if (this.state.messageId === '') {
             return (
-                <Typography variant="body1">
-                    No mail selected
-                </Typography>         
+                <div style={
+                    { overflow: 'auto', height: '100vh', display:"flex",
+                    flexDirection: "column",
+                    justifyContent: "center", }}>
+                <Typography variant="body1" >
+                    <center>No mail selected</center>
+                </Typography> 
+                </div>        
             )  
         } else if (this.state.messageData === '') {
             return (
+                <div style={
+                    { overflow: 'auto', height: '100vh', display:"flex",
+                    flexDirection: "column",
+                    justifyContent: "center", }}>
                 <center>
                     <CircularProgress color="primary" />
                 </center>
+                </div> 
             )  
         } else {
             return (
-                <div className="body" dangerouslySetInnerHTML={{__html: this.state.messageData}}></div>   
+                <div style={
+                    { overflow: 'auto', height: '100vh', }}>
+                <div className="body" dangerouslySetInnerHTML={{__html: this.state.messageData}}></div> 
+                </div>  
             )  
 
         }

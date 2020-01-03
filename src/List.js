@@ -1,7 +1,8 @@
 import React from 'react';
 import './App.css';
-import { Tooltip, IconButton, Typography, Paper, TableContainer, Table, TableHead, TableBody, TableRow, TableCell, Toolbar } from '@material-ui/core';
+import { AppBar, Grid, Tooltip, IconButton, Typography, Paper, TablePagination, TableContainer, Table, TableHead, TableBody, TableRow, TableCell, Toolbar } from '@material-ui/core';
 import RefreshIcon from '@material-ui/icons/Refresh';
+import ExitToAppIcon from '@material-ui/icons/ExitToApp'
 import EmailViewer from './Viewer';
 
 class EmailList extends React.Component {
@@ -44,7 +45,7 @@ class EmailList extends React.Component {
 
     componentDidMount() {
         this.reloadList()
-        this.intervalID = setInterval(this.checkList.bind(this), 5000);
+        this.intervalID = setInterval(this.checkList.bind(this), 60000);
     }   
 
     componentWillUnmount() {
@@ -54,25 +55,42 @@ class EmailList extends React.Component {
     handleClick(event, messageId) {
         this.setState({ selectedId: messageId })
     }
+
+    logout() {
+        this.props.changeAddress('');
+    }
   
     render() {
         return (
-          <Paper>  
-            <Paper>
-            <Toolbar className="List-header">
-                <Typography variant="body1">
-                <b>Disposable address:</b> {this.state.address}
+          <Grid container spacing={3}>   
+          
+          <AppBar position="static">  
+            <Toolbar>
+                <Typography style={{flex: 1,}}>
+                 Disposable address: <b>{this.state.address}</b>
                 </Typography>
 
                 <Tooltip title="Refresh list">
-                <IconButton color="primary" aria-label="refresh email list" onClick={this.reloadList.bind(this)}>
+                <IconButton  color="inherit" onClick={this.reloadList.bind(this)}>
                     <RefreshIcon />
                 </IconButton>
                 </Tooltip>
+
+                <Tooltip  title="Logout">
+                <IconButton color="inherit" onClick={this.logout.bind(this)}>
+                    <ExitToAppIcon />
+                </IconButton>
+                </Tooltip>
             </Toolbar>
+          </AppBar>  
+          
+            <Grid item xs={6}> 
             
-            <TableContainer>   
-            <Table stickyHeader>
+            <Paper elevation={3}>
+            <div style={{ overflow: 'auto', height: '100vh' }}> 
+            <TableContainer>  
+            
+            <Table stickyHeader size="small">
             <TableHead>
                 <TableRow>
                     <TableCell>#</TableCell>
@@ -99,13 +117,19 @@ class EmailList extends React.Component {
                 ) 
             )}
             </TableBody>
-            </Table>     
-            </TableContainer>
+            </Table>   
+              
+            </TableContainer> 
+            </div>          
             </Paper>
-            <Paper>
-            <EmailViewer address={this.state.address} messageId={this.state.selectedId} />
+            </Grid>
+            <Grid item xs={6}> 
+            <Paper elevation={3}>
+            <EmailViewer address={this.state.address} messageId={this.state.selectedId} />    
             </Paper>
-          </Paper>
+            </Grid>
+          </Grid>
+          
           )
     }
   }
