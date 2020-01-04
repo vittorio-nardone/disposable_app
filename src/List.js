@@ -60,6 +60,20 @@ class EmailList extends React.Component {
         this.props.changeAddress('');
     }
   
+    capitalize(sentence, lower) {
+        let string = String(sentence)
+        return (lower ? string.toLowerCase() : string).replace(/(?:^|\s)\S/g, function(a) { return a.toUpperCase(); });
+    };
+
+    senderName(address) {
+        const tokens = String(address).split('<');
+        if (tokens[0] !== '') {
+            return this.capitalize(tokens[0], false);
+        } else {
+            return address;
+        }
+    }
+
     render() {
         return (
           <Grid container spacing={3}>   
@@ -109,7 +123,7 @@ class EmailList extends React.Component {
                     onClick={event => this.handleClick(event, email.messageId)}
                 >
                     <TableCell style={email.isNew === 'true' ? {fontWeight:'bold',} : null}>{i+1}</TableCell>
-                    <TableCell style={email.isNew === 'true' ? {fontWeight:'bold',} : null}>{email.commonHeaders.from}</TableCell>
+                    <TableCell style={email.isNew === 'true' ? {fontWeight:'bold',} : null}>{this.senderName(email.commonHeaders.from)}</TableCell>
                     <TableCell style={email.isNew === 'true' ? {fontWeight:'bold',} : null}>{email.commonHeaders.subject}</TableCell>
                     <TableCell style={email.isNew === 'true' ? {fontWeight:'bold',} : null}>{email.commonHeaders.date}</TableCell>
                     
@@ -124,9 +138,7 @@ class EmailList extends React.Component {
             </Paper>
             </Grid>
             <Grid item xs={6}> 
-            <Paper elevation={3}>
-            <EmailViewer address={this.state.address} messageId={this.state.selectedId} />    
-            </Paper>
+                <EmailViewer address={this.state.address} messageId={this.state.selectedId} /> 
             </Grid>
           </Grid>
           
