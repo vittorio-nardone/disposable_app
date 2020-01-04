@@ -1,5 +1,5 @@
 import React from 'react';
-import logo from './logo.svg';
+import logo from './emaillogo.png';
 import './App.css';
 import LoginForm from './Login'
 import EmailList from './List'

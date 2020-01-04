@@ -53,6 +53,15 @@ class EmailViewer extends React.Component {
                 }
             } 
         }
+
+        if (result === '') {
+            if (parsed.childNodes.length === 0) {
+                if (parsed.contentType.value === 'text/html') {
+                    result = this.Decodeuint8arr(parsed.content); 
+                }    
+            }
+        }
+
         return result
     }
 

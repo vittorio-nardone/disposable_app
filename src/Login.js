@@ -24,15 +24,17 @@ class LoginForm extends React.Component {
     }
   
     handleSubmit(event) {
-
         const recaptchaValue = this.recaptchaRef.current.getValue();
-        console.log("Captcha value:", recaptchaValue);
+        if (recaptchaValue === null) {
+           window.location.reload();
+        } else { 
+            console.log("Captcha value:", recaptchaValue);
         
-        fetch('https://9ljg1w8c6j.execute-api.eu-west-1.amazonaws.com/beta/create?address=' 
+          fetch('https://9ljg1w8c6j.execute-api.eu-west-1.amazonaws.com/beta/create?address=' 
              + encodeURI(this.state.address + this.state.domain)
              + '&captcha=' + recaptchaValue)
-        .then(r =>  r.json().then(data => ({status: r.status, body: data})))
-        .then(r => {
+          .then(r =>  r.json().then(data => ({status: r.status, body: data})))
+          .then(r => {
             console.log(r);
             console.log('Response from API: ' + r.body.message);
             if (r.status === 200) {
@@ -40,6 +42,7 @@ class LoginForm extends React.Component {
             }
         })
         .catch(console.log);
+        }
         event.preventDefault();
     }
   
