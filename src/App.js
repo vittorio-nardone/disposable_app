@@ -43,19 +43,18 @@ class App extends React.Component {
                                        backgroundSize: "cover",
                                        overflow: "hidden" }}>
           <div className="App-header">
-          <Typography variant="h3"> 
-                <b>Disposabl:</b><i>email</i>
-              </Typography>
+            <Typography variant="h3"> 
+                <b>Disposabl</b><i>e-mail</i>
+            </Typography>
           </div>
           <div style={
                     { overflow: 'auto', height: '100vh', display:"flex",
                     flexDirection: "column",
                     justifyContent: "center",
                      }}>
-             <Paper elevation={3}>
-              
+            <Paper elevation={3}>
               <LoginForm changeAddress={this.changeAddress.bind(this)}/>
-             </Paper>
+            </Paper>
           </div>
         </div>
       );

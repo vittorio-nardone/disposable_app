@@ -28,8 +28,11 @@ class EmailList extends React.Component {
                 if (a.timestamp > b.timestamp) { return -1 } else { return 1 }
             })         
             if ((this.listIsChanged(data.Items) || force)) {
-                    this.setState({ emails: data.Items })
-                console.log(data.Items)
+                    this.setState({ emails: data.Items });
+                    if ((this.state.selectedId === '') && (data.Items.length > 0)) {
+                        this.setState({ selectedId: data.Items[0].messageId });   
+                    }
+                    console.log(data.Items)
             }
         })
         .catch(console.log)
@@ -130,6 +133,12 @@ class EmailList extends React.Component {
                 </TableRow>
                 ) 
             )}
+            {this.state.emails.length == 0 ? 
+                    <TableRow>
+                        <TableCell colSpan="4">
+                            <Typography variant="body1">No mails here</Typography>
+                        </TableCell>
+                    </TableRow> : null}
             </TableBody>
             </Table>   
               
