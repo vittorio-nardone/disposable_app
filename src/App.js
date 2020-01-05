@@ -1,6 +1,4 @@
 import React from 'react';
-// import logo from './emaillogo.png';
-import background from './images/background.jpg'
 import './App.css';
 import LoginForm from './Login'
 import EmailList from './List'
@@ -17,7 +15,7 @@ const styles = theme => ({
 			backgroundPosition: "center center",
 			backgroundSize: "cover",
 			backgroundAttachment: "fixed",
-			height: "50%"
+			height: "100%"
 		},
 
 	}
