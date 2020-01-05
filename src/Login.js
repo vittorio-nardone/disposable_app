@@ -58,6 +58,7 @@ class LoginForm extends React.Component {
           <TextField 
               value={this.state.address} 
               onChange={this.handleChange}
+              placeholder="(type yours)"
               inputProps={{
                 style: { textAlign: "right" }
               }} 

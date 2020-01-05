@@ -115,7 +115,8 @@ class EmailViewer extends React.Component {
                     { overflow: 'auto', height: '100vh', display:"flex",
                     flexDirection: "column",
                     justifyContent: "center",
-                    textAlign:"center" }}>
+                    textAlign:"center",
+                    backgroundColor: "white" }}>
                 <Typography variant="body1" >
                     No mail selected
                 </Typography> 
@@ -126,7 +127,8 @@ class EmailViewer extends React.Component {
                 <div style={
                     { overflow: 'auto', height: '100vh', display:"flex",
                     flexDirection: "column",
-                    justifyContent: "center", }}>
+                    justifyContent: "center",
+                    backgroundColor: "white" }}>
                 <center>
                     <CircularProgress color="primary" />
                 </center>
