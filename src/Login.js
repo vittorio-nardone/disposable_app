@@ -6,9 +6,8 @@ class LoginForm extends React.Component {
 
     constructor(props) {
       super(props);
-      this.state = {address: '', domain: '@aws.gotocloud.it'};
+      this.state = {address: ''};
       
-  
       this.handleChange = this.handleChange.bind(this);
       this.handleSubmit = this.handleSubmit.bind(this);
 
@@ -25,20 +24,20 @@ class LoginForm extends React.Component {
   
     handleSubmit(event) {
         const recaptchaValue = this.recaptchaRef.current.getValue();
-        if (recaptchaValue === null) {
+        if (recaptchaValue === '') {
            window.location.reload();
         } else { 
             console.log("Captcha value:", recaptchaValue);
         
           fetch(this.props.apiEndpoint + 'create?address=' 
-             + encodeURI(this.state.address + this.state.domain)
+             + encodeURI(this.state.address + this.props.email_domain)
              + '&captcha=' + recaptchaValue)
           .then(r =>  r.json().then(data => ({status: r.status, body: data})))
           .then(r => {
             console.log(r);
             console.log('Response from API: ' + r.body.message);
             if (r.status === 200) {
-              this.props.changeAddress(this.state.address + this.state.domain);  
+              this.props.changeAddress(this.state.address + this.props.email_domain);  
             }
         })
         .catch(console.log);
@@ -63,7 +62,7 @@ class LoginForm extends React.Component {
                 style: { textAlign: "right" }
               }} 
           />
-          <FormLabel>{this.state.domain}</FormLabel>
+          <FormLabel>{this.props.email_domain}</FormLabel>
           <Button type="submit">Open</Button>
         </form>
       );

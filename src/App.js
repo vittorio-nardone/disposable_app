@@ -3,8 +3,21 @@ import './App.css';
 import LoginForm from './Login'
 import EmailList from './List'
 import { Paper, Typography } from '@material-ui/core';
-
 import { withStyles } from "@material-ui/core/styles";
+
+/////////////////////////////////////////////////////////////////////////////////
+// Please change these values with:
+
+//  - your APIEndpoint. It's an output value of AWS CloudFormation template 
+const APIEndpoint = 'https://3owap4whpb.execute-api.eu-west-1.amazonaws.com/v0/';
+
+//  - your ReCaptcha Site Key. Get it at https://www.google.com/recaptcha/admin 
+const ReCaptcha_SiteKey = "6Lfb-8sUAAAAAElnudfv4yqAg5Yk3oyONVXFy0xK"; 
+
+//  - your email domain
+const email_domain = '@aws.gotocloud.it';
+/////////////////////////////////////////////////////////////////////////////////
+
 const styles = theme => ({
 	"@global": {
 		body: {
@@ -18,9 +31,6 @@ const styles = theme => ({
 
 	}
 });
-
-const APIEndpoint = 'https://3owap4whpb.execute-api.eu-west-1.amazonaws.com/v0/';
-const ReCaptcha_SiteKey = "6Lfb-8sUAAAAAElnudfv4yqAg5Yk3oyONVXFy0xK"; 
 
 class App extends React.Component {
   constructor(props) {
@@ -60,7 +70,8 @@ class App extends React.Component {
               <LoginForm 
                 changeAddress={this.changeAddress.bind(this)} 
                 apiEndpoint={APIEndpoint}
-                recaptcha_key={ReCaptcha_SiteKey}/>
+                recaptcha_key={ReCaptcha_SiteKey}
+                email_domain={email_domain}/>
             </Paper>
           </div>
         </div>
