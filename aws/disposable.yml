@@ -1,0 +1,1240 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Disposable Email 
+    
+Parameters:
+    DomainName:
+        Description: Domain name to be used
+        Type: String
+    AddressesTableName:
+        Description: DynamoDB table to store valid addresses
+        Type: String
+        Default: "disposable_addresses_table"
+    EmailsTableName:
+        Description: DynamoDB table to store emails 
+        Type: String
+        Default: "disposable_emails_table"
+    RuleSetName:
+        Description: SES RuleSet name to be used 
+        Type: String
+        Default: "default-rule-set"
+    TTL:
+        Description: Life (seconds) of mailbox
+        Type: String
+        Default: "3600"
+    ReCaptchaPrivateKey:
+        Description: ReCaptcha private key to validate mailbox creation requests  
+        Type: String
+        Default: ""
+      
+Outputs:
+    DisposableApiEndpoint:
+        Description: API Endpoint to serve Client App
+        Value: 
+            Fn::Sub: 'https://${DisposableApi}.execute-api.${AWS::Region}.amazonaws.com/v0/'
+
+Resources:
+    IncomingMailBucket:
+        Type: 'AWS::S3::Bucket'  
+        Properties:
+            BucketName: 
+                Fn::Join: [ '.', [ 'incoming.disposable', Ref: DomainName ] ]
+            PublicAccessBlockConfiguration:
+                BlockPublicAcls: true
+                BlockPublicPolicy: true
+                IgnorePublicAcls: true
+                RestrictPublicBuckets: true
+
+    IncomingMailBucketPolicy:
+        Type: 'AWS::S3::BucketPolicy'  
+        Properties:
+            Bucket: 
+                Ref: "IncomingMailBucket"
+            PolicyDocument:
+                Statement: 
+                    Action: "s3:PutObject"
+                    Effect: "Allow"
+                    Resource: 
+                        Fn::Join: ["", ["arn:aws:s3:::", Ref: "IncomingMailBucket", "/*"]] 
+                    Principal: 
+                        Service: "ses.amazonaws.com"
+                    Condition: 
+                        StringEquals: 
+                            aws:Referer: 
+                                Ref: "AWS::AccountId"
+            
+    AddressesTable:
+        Type: AWS::DynamoDB::Table
+        Properties: 
+            KeySchema: 
+            -   AttributeName: "address"
+                KeyType: "HASH"
+            AttributeDefinitions:
+            -   AttributeName: "address"
+                AttributeType: "S"
+            ProvisionedThroughput: 
+                ReadCapacityUnits: "1"
+                WriteCapacityUnits: "1"
+            TableName: 
+                Ref: AddressesTableName
+
+    EmailsTable:
+        Type: AWS::DynamoDB::Table
+        Properties: 
+            KeySchema: 
+            -   AttributeName: "destination"
+                KeyType: "HASH"
+            -   AttributeName: "messageId"
+                KeyType: "RANGE"
+            AttributeDefinitions:
+            -   AttributeName: "destination"
+                AttributeType: "S"
+            -   AttributeName: "messageId"
+                AttributeType: "S"
+            ProvisionedThroughput: 
+                ReadCapacityUnits: "1"
+                WriteCapacityUnits: "1"
+            TableName: 
+                Ref: EmailsTableName 
+
+
+    IncomingMailCheckFunctionRole:
+        Type: AWS::IAM::Role
+        Properties:
+            AssumeRolePolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                -   Effect: Allow
+                    Principal:
+                        Service:
+                        - lambda.amazonaws.com
+                    Action:
+                    - sts:AssumeRole
+            Policies:
+                -   PolicyName: Allow-logs
+                    PolicyDocument:
+                        Version: '2012-10-17'
+                        Statement:
+                        -   Effect: Allow
+                            Action:
+                            - 'logs:CreateLogGroup'
+                            - 'logs:CreateLogStream'
+                            - 'logs:PutLogEvents'
+                            Resource: arn:aws:logs:*:*:*
+                -   PolicyName: AddressesTableGetItem
+                    PolicyDocument:
+                        Version: '2012-10-17'
+                        Statement:
+                        -   Effect: Allow
+                            Action:
+                            - 'dynamodb:GetItem'
+                            Resource: 
+                                Fn::GetAtt: [ "AddressesTable", "Arn" ]
+        
+    IncomingMailCheckFunction:
+        Type: AWS::Lambda::Function
+        Properties:
+            Runtime: python3.7
+            Description: Invoked by SES to check if mail address exists.
+            Handler: index.lambda_handler
+            Role: 
+                Fn::GetAtt: [ "IncomingMailCheckFunctionRole", "Arn" ]
+            Environment:
+                Variables:
+                    addresses_table_name:
+                        Ref: AddressesTableName
+                    emails_table_name:
+                        Ref: EmailsTableName
+            Timeout: 10    
+            Code:
+                ZipFile:  |
+                    import boto3
+                    from botocore.exceptions import ClientError
+                    import os
+                    import logging
+                    import time
+                    
+                    logger = logging.getLogger()
+                    logger.setLevel(logging.INFO)
+                    
+                    dynamodb = boto3.resource("dynamodb")
+                    table = dynamodb.Table(os.environ['addresses_table_name'])
+                    
+                    def address_exists(address):
+                        exists = False
+                        try:
+                            response = table.get_item(
+                                Key={
+                                'address': address
+                                }
+                            )
+                        except ClientError as e:
+                            logger.info('## DynamoDB Client Exception')
+                            logger.info(e.response['Error']['Message'])
+                        else:
+                            logger.info('## DynamoDB Response')
+                            logger.info(response)
+                            if 'Item' in response:
+                                item = response['Item']
+                                if item['TTL'] > int(time.time()):
+                                    exists = True
+                        return exists
+                    
+                    def lambda_handler(event, context):
+                        logger.info('## ENVIRONMENT VARIABLES')
+                        logger.info(os.environ)
+                        logger.info('## EVENT')
+                        logger.info(event)
+                    
+                        for record in event['Records']:
+                            to_address = record['ses']['mail']['destination'][0]
+                            logger.info('## DESTINATION')
+                            logger.info(to_address)
+                            if address_exists(to_address):
+                                return {'disposition': 'CONTINUE'}
+                            else:
+                                return {'disposition': 'STOP_RULE_SET'}
+                            break;
+
+
+    StoreEmailFunctionRole:
+        Type: AWS::IAM::Role
+        Properties:
+            AssumeRolePolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                -   Effect: Allow
+                    Principal:
+                        Service:
+                        - lambda.amazonaws.com
+                    Action:
+                    - sts:AssumeRole
+            Policies:
+                -   PolicyName: Allow-logs
+                    PolicyDocument:
+                        Version: '2012-10-17'
+                        Statement:
+                        -   Effect: Allow
+                            Action:
+                            - 'logs:CreateLogGroup'
+                            - 'logs:CreateLogStream'
+                            - 'logs:PutLogEvents'
+                            Resource: arn:aws:logs:*:*:*
+                -   PolicyName: EmailsTablePutItem
+                    PolicyDocument:
+                        Version: '2012-10-17'
+                        Statement:
+                        -   Effect: Allow
+                            Action:
+                            - 'dynamodb:PutItem'
+                            Resource: 
+                                Fn::GetAtt: [ "EmailsTable", "Arn" ]
+        
+    StoreEmailFunction:
+        Type: AWS::Lambda::Function
+        Properties:
+            Runtime: python3.7
+            Description: Incoming mail topic subscriber to store emails in db.
+            Handler: index.lambda_handler
+            Role: 
+                Fn::GetAtt: [ "StoreEmailFunctionRole", "Arn" ]
+            Environment:
+                Variables:
+                    addresses_table_name:
+                        Ref: AddressesTableName
+                    emails_table_name:
+                        Ref: EmailsTableName
+            Timeout: 10
+            Code:
+                ZipFile:  |
+                    import boto3
+                    from botocore.exceptions import ClientError
+                    import json
+                    import os
+                    import logging
+                    import time
+
+                    logger = logging.getLogger()
+                    logger.setLevel(logging.INFO)
+
+                    dynamodb = boto3.resource("dynamodb")
+                    table = dynamodb.Table(os.environ['emails_table_name'])
+
+                    def store_email(email, receipt):
+                        try:
+                            response = table.put_item(
+                                Item= {'destination': email['destination'][0],
+                                    'messageId': email['messageId'],
+                                    'timestamp': email['timestamp'],
+                                    'source': email['source'],
+                                    'commonHeaders': email['commonHeaders'],
+                                    'bucketName': receipt['action']['bucketName'],
+                                    'bucketObjectKey': receipt['action']['objectKey'],
+                                    'isNew': "true"
+                                }
+                            )
+                        except ClientError as e:
+                            logger.info('## DynamoDB Client Exception')
+                            logger.info(e.response['Error']['Message'])
+                        else:
+                            logger.info('## DynamoDB Response')
+                            logger.info(response)
+                    
+                    def lambda_handler(event, context):
+                        logger.info('## ENVIRONMENT VARIABLES')
+                        logger.info(os.environ)
+                        logger.info('## EVENT')
+                        logger.info(event)
+
+                        message = json.loads(event['Records'][0]['Sns']['Message'])
+                        store_email(message['mail'], message['receipt'])
+
+    
+    IncomingMailTopic:
+        Type: AWS::SNS::Topic
+        Properties:
+            DisplayName: "Disposable incoming mail topic"
+            Subscription:
+                -   Endpoint: 
+                        Fn::GetAtt: [ "StoreEmailFunction", "Arn" ]
+                    Protocol: "LAMBDA"
+   
+    IncomingMailTopicPolicy:
+        Type: 'AWS::SNS::TopicPolicy'
+        Properties:
+            Topics:
+                - Ref: IncomingMailTopic
+            PolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                    -   Effect: Allow
+                        Action: 'sns:Publish'
+                        Resource: 
+                            Ref: IncomingMailTopic
+                        Principal:
+                            Service: "ses.amazonaws.com"
+                        Condition:
+                            ArnLike:
+                                AWS:SourceArn: 
+                                    Fn::Sub: 'arn:aws:*:*:${AWS::AccountId}:*'
+
+
+    IncomingMailCheckPermission:
+        Type: AWS::Lambda::Permission
+        Properties:
+            Action: lambda:InvokeFunction
+            FunctionName: 
+                Ref: IncomingMailCheckFunction
+            Principal: ses.amazonaws.com
+            SourceAccount: 
+                Ref: AWS::AccountId
+    
+    StoreEmailFunctionPermission:
+        Type: AWS::Lambda::Permission
+        Properties:
+            Action: lambda:InvokeFunction
+            FunctionName: 
+                Ref: StoreEmailFunction
+            Principal: sns.amazonaws.com
+            SourceArn:
+                Ref: IncomingMailTopic
+
+    ReceiptRule:
+        Type: AWS::SES::ReceiptRule
+        Properties:
+            RuleSetName: 
+                Ref: RuleSetName
+            Rule:
+                Name: "disposable"
+                Enabled: true
+                ScanEnabled: true
+                Actions:
+                    -   LambdaAction:
+                            FunctionArn: 
+                                Fn::GetAtt: [ "IncomingMailCheckFunction", "Arn" ]
+                            InvocationType: "RequestResponse"
+                    -   S3Action:
+                            BucketName:
+                                Ref: IncomingMailBucket
+                            TopicArn:
+                                Ref: IncomingMailTopic          
+                Recipients:
+                    -   Ref: DomainName
+
+
+    CreateEmailFunctionRole:
+        Type: AWS::IAM::Role
+        Properties:
+            AssumeRolePolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                -   Effect: Allow
+                    Principal:
+                        Service:
+                        - lambda.amazonaws.com
+                    Action:
+                    - sts:AssumeRole
+            Policies:
+                -   PolicyName: Allow-logs
+                    PolicyDocument:
+                        Version: '2012-10-17'
+                        Statement:
+                        -   Effect: Allow
+                            Action:
+                            - 'logs:CreateLogGroup'
+                            - 'logs:CreateLogStream'
+                            - 'logs:PutLogEvents'
+                            Resource: arn:aws:logs:*:*:*
+                -   PolicyName: AddressesTableGetPutItem
+                    PolicyDocument:
+                        Version: '2012-10-17'
+                        Statement:
+                        -   Effect: Allow
+                            Action:
+                            - 'dynamodb:PutItem'
+                            - 'dynamodb:GetItem'
+                            Resource: 
+                                Fn::GetAtt: [ "AddressesTable", "Arn" ]
+
+    CreateEmailFunction:
+        Type: AWS::Lambda::Function
+        Properties:
+            Runtime: python3.7
+            Description: Create new mailbox.
+            Handler: index.lambda_handler
+            Role: 
+                Fn::GetAtt: [ "CreateEmailFunctionRole", "Arn" ]
+            Environment:
+                Variables:
+                    addresses_table_name:
+                        Ref: AddressesTableName
+                    mailbox_ttl:
+                        Ref: TTL
+                    recaptcha_key:
+                        Ref: ReCaptchaPrivateKey
+                    valid_domains:
+                        Ref: DomainName    
+            Timeout: 10
+            Code:
+                ZipFile:  |
+                    import boto3
+                    from botocore.exceptions import ClientError
+                    import http.client, urllib.parse
+                    import json
+                    import os
+                    import logging
+                    import time
+                    import re
+                    
+                    logger = logging.getLogger()
+                    logger.setLevel(logging.INFO)
+                    
+                    dynamodb = boto3.resource("dynamodb")
+                    table = dynamodb.Table(os.environ['addresses_table_name'])
+                    
+                    ssm = boto3.client('ssm')
+                    valid_domains = os.environ['valid_domains'].split(',')
+                    defaultTTL = int(os.environ['mailbox_ttl'])
+                    recaptcha_key = os.environ['recaptcha_key']
+                    
+                    def address_exists(address):
+                        exists = False
+                        try:
+                            response = table.get_item(
+                                Key={
+                                'address': address
+                                }
+                            )
+                        except ClientError as e:
+                            logger.info('## DynamoDB Client Exception')
+                            logger.info(e.response['Error']['Message'])
+                        else:
+                            logger.info('## DynamoDB Response')
+                            logger.info(response)
+                            if 'Item' in response:
+                                item = response['Item']
+                                if item['TTL'] > int(time.time()):
+                                    exists = True
+                        return exists
+                    
+                    def create_address(address):
+                        TTL = int(time.time()) + defaultTTL
+                        try:
+                            response = table.put_item(
+                                Item= {'address': address, 'TTL': TTL}
+                            )
+                        except ClientError as e:
+                            logger.info('## DynamoDB Client Exception')
+                            logger.info(e.response['Error']['Message'])
+                        else:
+                            logger.info('## DynamoDB Response')
+                            logger.info(response)
+                    
+                    def validate_email(address):
+                        valid = False
+                        # Do some basic regex validation 
+                        match = re.match('^[_a-z0-9-]+(\.[_a-z0-9-]+)*@[a-z0-9-]+(\.[a-z0-9-]+)*(\.[a-z]{2,4})$', address)
+                        if (match != None):
+                            domain = address.split("@")[-1]
+                            if domain in valid_domains:
+                                valid = True
+                        return valid
+                    
+                    def validate_recaptcha(token):
+                        conn = http.client.HTTPSConnection('www.google.com')
+                        headers = {"Content-type": "application/x-www-form-urlencoded"}
+                        params = urllib.parse.urlencode({'secret': recaptcha_key, 'response': token}) 
+                        conn.request('POST', '/recaptcha/api/siteverify', params, headers)
+                        response = conn.getresponse()
+                        r = response.read().decode() 
+                        logger.info('## reCAPTCHA response')
+                        logger.info(r)
+                        r = json.loads(r)
+                        return r['success']
+                        
+                    
+                    def lambda_handler(event, context):
+                        logger.info('## ENVIRONMENT VARIABLES')
+                        logger.info(os.environ)
+                        logger.info('## EVENT')
+                        logger.info(event)
+                        logger.info('## Configuration')
+                        logger.info('Domains: {}'.format(valid_domains))
+                        logger.info('TTL: {}'.format(defaultTTL))
+                        
+                        headers = {
+                                    "access-control-allow-headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+                                    "access-control-allow-methods": "DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT",
+                                    "access-control-allow-origin": "*"
+                                }
+                        
+                        result = {"statusCode": 400, 
+                                "body": json.dumps({"message":"missing or invalid parameters"}), 
+                                "headers": headers
+                        }
+                    
+                        if event["queryStringParameters"] != None:
+                            if (("address" in event["queryStringParameters"]) and 
+                                ("captcha" in event["queryStringParameters"])):
+                                email_address = event["queryStringParameters"]["address"] 
+                                captcha = event["queryStringParameters"]["captcha"] 
+                                if validate_recaptcha(captcha):
+                                    if validate_email(email_address):
+                                        if address_exists(email_address):
+                                            message = "email address already exists"
+                                        else:
+                                            create_address(email_address)
+                                            message = "email address created"
+                                    
+                                        result = {
+                                            "statusCode": 200,
+                                            "body": json.dumps({"message":message}), 
+                                            "headers": headers
+                                        }
+                    
+                        return result                
+
+    GetEmailsListFunctionRole:
+        Type: AWS::IAM::Role
+        Properties:
+            AssumeRolePolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                -   Effect: Allow
+                    Principal:
+                        Service:
+                        - lambda.amazonaws.com
+                    Action:
+                    - sts:AssumeRole
+            Policies:
+                -   PolicyName: Allow-logs
+                    PolicyDocument:
+                        Version: '2012-10-17'
+                        Statement:
+                        -   Effect: Allow
+                            Action:
+                            - 'logs:CreateLogGroup'
+                            - 'logs:CreateLogStream'
+                            - 'logs:PutLogEvents'
+                            Resource: arn:aws:logs:*:*:*
+                -   PolicyName: EmailsTableGetQueryItem
+                    PolicyDocument:
+                        Version: '2012-10-17'
+                        Statement:
+                        -   Effect: Allow
+                            Action:
+                            - 'dynamodb:Query'
+                            - 'dynamodb:GetItem'
+                            Resource: 
+                                Fn::GetAtt: [ "EmailsTable", "Arn" ]
+
+    GetEmailsListFunction:
+        Type: AWS::Lambda::Function
+        Properties:
+            Runtime: python3.7
+            Description: Get list of emails for a specific address.
+            Handler: index.lambda_handler
+            Role: 
+                Fn::GetAtt: [ "GetEmailsListFunctionRole", "Arn" ]
+            Environment:
+                Variables:
+                    emails_table_name:
+                        Ref: EmailsTableName
+            Timeout: 10
+            Code:
+                ZipFile:  |
+                    import boto3
+                    from botocore.exceptions import ClientError
+                    from boto3.dynamodb.conditions import Key
+                    import json
+                    import os
+                    import logging
+                    
+                    logger = logging.getLogger()
+                    logger.setLevel(logging.INFO)
+                    
+                    dynamodb = boto3.resource("dynamodb")
+                    table = dynamodb.Table(os.environ['emails_table_name'])
+                    
+                    def get_emails(destination):
+                        items = None
+                        try:
+                            filtering_exp = Key('destination').eq(destination)
+                            response = table.query(KeyConditionExpression=filtering_exp)        
+                        except ClientError as e:
+                            logger.info('## DynamoDB Client Exception')
+                            logger.info(e.response['Error']['Message'])
+                        else:
+                            logger.info('## DynamoDB Response')
+                            logger.info(response)
+                            #Clean response       
+                            for i in response['Items']:
+                                i.pop('bucketObjectKey', None)
+                                i.pop('bucketName', None)
+                            items = {'Items' : response['Items'], 'Count' : response['Count']}
+                        return items
+                    
+                    def lambda_handler(event, context):
+                        logger.info('## ENVIRONMENT VARIABLES')
+                        logger.info(os.environ)
+                        logger.info('## EVENT')
+                        logger.info(event)
+                        
+                        headers = {
+                                    "access-control-allow-headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+                                    "access-control-allow-methods": "DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT",
+                                    "access-control-allow-origin": "*"
+                                }
+                        
+                        result = {"statusCode": 400, 
+                                "body": json.dumps({"message":"missing destination parameter"}), 
+                                "headers": headers
+                        }
+                    
+                        if event["pathParameters"] != None:
+                            if "destination" in event["pathParameters"]:
+                                destination = event["pathParameters"]["destination"]
+                                items = get_emails(destination)
+                                if items != None:
+                                    result = {"statusCode": 200, "body": json.dumps(items), "headers": headers }
+                    
+                        return result    
+
+
+    GetEmailFileFunctionRole:
+        Type: AWS::IAM::Role
+        Properties:
+            AssumeRolePolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                -   Effect: Allow
+                    Principal:
+                        Service:
+                        - lambda.amazonaws.com
+                    Action:
+                    - sts:AssumeRole
+            Policies:
+                -   PolicyName: Allow-logs
+                    PolicyDocument:
+                        Version: '2012-10-17'
+                        Statement:
+                        -   Effect: Allow
+                            Action:
+                            - 'logs:CreateLogGroup'
+                            - 'logs:CreateLogStream'
+                            - 'logs:PutLogEvents'
+                            Resource: arn:aws:logs:*:*:*
+                -   PolicyName: EmailsTableGetUpdateItem
+                    PolicyDocument:
+                        Version: '2012-10-17'
+                        Statement:
+                        -   Effect: Allow
+                            Action:
+                            - 'dynamodb:UpdateItem'
+                            - 'dynamodb:GetItem'
+                            Resource: 
+                                Fn::GetAtt: [ "EmailsTable", "Arn" ]
+                -   PolicyName: MailBucketGetObject
+                    PolicyDocument:
+                        Version: '2012-10-17'
+                        Statement:
+                        -   Effect: Allow
+                            Action:
+                            - 's3:GetObject'
+                            Resource: 
+                                Fn::Join: ["", ["arn:aws:s3:::", Ref: "IncomingMailBucket", "/*"]] 
+            
+    GetEmailFileFunction:
+        Type: AWS::Lambda::Function
+        Properties:
+            Runtime: python3.7
+            Description: Get contents of a specific messageId.
+            Handler: index.lambda_handler
+            Role: 
+                Fn::GetAtt: [ "GetEmailFileFunctionRole", "Arn" ]
+            Environment:
+                Variables:
+                    emails_table_name:
+                        Ref: EmailsTableName
+            Timeout: 10
+            Code:
+                ZipFile:  | 
+                    import boto3
+                    from botocore.exceptions import ClientError
+                    import json
+                    import os
+                    import logging
+
+                    logger = logging.getLogger()
+                    logger.setLevel(logging.INFO)
+
+                    dynamodb = boto3.resource("dynamodb")
+                    table = dynamodb.Table(os.environ['emails_table_name'])
+
+                    s3 = boto3.client('s3')
+
+                    def get_email_file(destination, messageId):
+                        result = None
+                        try:
+                            response = table.get_item(
+                                Key={
+                                'destination': destination,
+                                'messageId' : messageId
+                                }
+                            )
+                        except ClientError as e:
+                            logger.info('## DynamoDB Client Exception')
+                            logger.info(e.response['Error']['Message'])
+                        else:
+                            logger.info('## DynamoDB Response')
+                            logger.info(response)
+                            if 'Item' in response:
+                                result = response['Item']
+                        return result
+
+
+                    def set_as_readed(destination, messageId):
+                        result = None
+                        try:
+                            response = table.update_item(
+                                Key={
+                                'destination': destination,
+                                'messageId' : messageId
+                                },
+                                UpdateExpression="SET isNew = :updated",                   
+                                ExpressionAttributeValues={':updated': 'false'}
+                            )
+                        except ClientError as e:
+                            logger.info('## DynamoDB Client Exception')
+                            logger.info(e.response['Error']['Message'])
+                        else:
+                            logger.info('## DynamoDB Response')
+                            logger.info(response)
+
+                    def lambda_handler(event, context):
+                        logger.info('## ENVIRONMENT VARIABLES')
+                        logger.info(os.environ)
+                        logger.info('## EVENT')
+                        logger.info(event)
+                        
+                        headers = {
+                                    "access-control-allow-headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
+                                    "access-control-allow-methods": "DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT",
+                                    "access-control-allow-origin": "*"
+                                }
+                        
+                        
+                        result = {"statusCode": 400, "body": json.dumps({"body": "missing parameters"}), "headers": headers }
+                        
+                        if event["pathParameters"] != None:
+                            destination = event["pathParameters"]["destination"]
+                            messageId = event["pathParameters"]["messageId"]
+                            email_file = get_email_file(destination, messageId) 
+                            if email_file != None:
+                                data = s3.get_object(Bucket=email_file['bucketName'], Key=email_file['bucketObjectKey'])
+                                contents = data['Body'].read().decode('utf-8')
+                                headers.update({"content-type": "message/rfc822"})
+                                result = {
+                                    "statusCode": 200,
+                                    "headers": headers,
+                                    "body":  contents 
+                                }
+                                set_as_readed(destination, messageId)
+                            else:
+                                result = {"statusCode": 401, "body": json.dumps({"message":"not found"}), "headers": headers }
+
+                        return result
+
+    CleanUpFunctionRole:
+        Type: AWS::IAM::Role
+        Properties:
+            AssumeRolePolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                -   Effect: Allow
+                    Principal:
+                        Service:
+                        - lambda.amazonaws.com
+                    Action:
+                    - sts:AssumeRole
+            Policies:
+                -   PolicyName: Allow-logs
+                    PolicyDocument:
+                        Version: '2012-10-17'
+                        Statement:
+                        -   Effect: Allow
+                            Action:
+                            - 'logs:CreateLogGroup'
+                            - 'logs:CreateLogStream'
+                            - 'logs:PutLogEvents'
+                            Resource: arn:aws:logs:*:*:*
+                -   PolicyName: EmailsTableGetDeleteItem
+                    PolicyDocument:
+                        Version: '2012-10-17'
+                        Statement:
+                        -   Effect: Allow
+                            Action:
+                            - 'dynamodb:DeleteItem'
+                            - 'dynamodb:GetItem'
+                            - 'dynamodb:Scan'
+                            - 'dynamodb:Query'
+                            Resource: 
+                            - Fn::GetAtt: [ "EmailsTable", "Arn" ]
+                            - Fn::GetAtt: [ "AddressesTable", "Arn" ]
+                -   PolicyName: MailBucketDeleteObject
+                    PolicyDocument:
+                        Version: '2012-10-17'
+                        Statement:
+                        -   Effect: Allow
+                            Action:
+                            - 's3:DeleteObject'
+                            Resource: 
+                                Fn::Join: ["", ["arn:aws:s3:::", Ref: "IncomingMailBucket", "/*"]] 
+            
+    CleanUpFunction:
+        Type: AWS::Lambda::Function
+        Properties:
+            Runtime: python3.7
+            Description: Empty and delete expired mailboxes.
+            Handler: index.lambda_handler
+            Role: 
+                Fn::GetAtt: [ "CleanUpFunctionRole", "Arn" ]
+            Environment:
+                Variables:
+                    emails_table_name:
+                        Ref: EmailsTableName
+                    addresses_table_name:
+                        Ref: AddressesTableName
+            Timeout: 10
+            Code:
+                ZipFile:  | 
+                    import boto3
+                    from botocore.exceptions import ClientError
+                    from boto3.dynamodb.conditions import Key, Attr
+                    import json
+                    import os
+                    import logging
+                    import time
+                    
+                    logger = logging.getLogger()
+                    logger.setLevel(logging.INFO)
+                    
+                    dynamodb = boto3.resource("dynamodb")
+                    s3 = boto3.client('s3')
+                    
+                    addresses_table = dynamodb.Table(os.environ['addresses_table_name'])
+                    emails_table = dynamodb.Table(os.environ['emails_table_name'])
+                    
+                    
+                    def delete_object(bucket_name, object_name):
+                        """Delete an object from an S3 bucket
+                    
+                        :param bucket_name: string
+                        :param object_name: string
+                        :return: True if the referenced object was deleted, otherwise False
+                        """
+                        logger.info('## Deleting S3')
+                        logger.info(bucket_name + object_name)
+                        
+                        # Delete the object
+                        try:
+                            s3.delete_object(Bucket=bucket_name, Key=object_name)
+                        except ClientError as e:
+                            logger.error(e)
+                            return False
+                        return True
+                    
+                    def delete_email_item(destination, messageId):
+                        try:
+                            response = emails_table.delete_item(
+                                Key={
+                                'destination': destination,
+                                'messageId': messageId
+                                }
+                            )
+                        except ClientError as e:
+                            logger.error('## DynamoDB Client Exception')
+                            logger.error(e.response['Error']['Message'])
+                        else:
+                            logger.info('## DynamoDB Response')
+                            logger.info(response)
+                            
+                    def delete_address_item(address):
+                        try:
+                            response = addresses_table.delete_item(
+                                Key={
+                                'address': address
+                                }
+                            )
+                        except ClientError as e:
+                            logger.error('## DynamoDB Client Exception')
+                            logger.error(e.response['Error']['Message'])
+                        else:
+                            logger.info('## DynamoDB Response')
+                            logger.info(response)
+                    
+                    def find_emails(destination):
+                        try:
+                            filtering_exp = Key('destination').eq(destination)
+                            response = emails_table.query(KeyConditionExpression=filtering_exp)        
+                        except ClientError as e:
+                            logger.error('## DynamoDB Client Exception')
+                            logger.error(e.response['Error']['Message'])
+                        else:
+                            logger.info('## DynamoDB Response')
+                            logger.info(response)
+                            #Clean response       
+                            for I in response['Items']:
+                                delete_object(I['bucketName'], I['bucketObjectKey'])
+                                delete_email_item(destination, I['messageId'])
+                                
+                    def cleanup():
+                        #get expired addresses
+                        try:
+                            response = addresses_table.scan(
+                                FilterExpression = Attr('TTL').lt(int(time.time())),
+                                ProjectionExpression = "address"
+                            )
+                        except ClientError as e:
+                            logger.error('## DynamoDB Client Exception')
+                            logger.error(e.response['Error']['Message'])
+                        else:
+                            logger.info('## DynamoDB Response')
+                            logger.info(response)
+                            for I in response['Items']:
+                                find_emails(I['address'])
+                                delete_address_item(I['address'])
+                    
+                    def lambda_handler(event, context):
+                        logger.info('## ENVIRONMENT VARIABLES')
+                        logger.info(os.environ)
+                        logger.info('## EVENT')
+                        logger.info(event)
+                        
+                        result = {"statusCode": 200, "body": "cleanup"}
+                        cleanup()
+                        
+                        return result
+
+
+    DisposableApi:
+        Type: AWS::ApiGateway::RestApi
+        Properties:
+            Name: 
+                Fn::Join: [".", ["api", Ref: "DomainName"]]
+            Description: 
+                Fn::Join: ["", ["Disposable emails API for domain ", Ref: "DomainName"]]
+            EndpointConfiguration:
+                Types:
+                    - REGIONAL
+
+    DisposableApiCreateResource:
+        Type: AWS::ApiGateway::Resource
+        Properties:
+            ParentId: 
+                Fn::GetAtt: [ "DisposableApi", "RootResourceId" ]
+            PathPart: 'create'
+            RestApiId: 
+                Ref: DisposableApi
+
+    DisposableApiCreateRequestValidator:
+        Type: AWS::ApiGateway::RequestValidator
+        Properties: 
+            RestApiId:
+                Ref: DisposableApi
+            ValidateRequestParameters: true
+
+    DisposableApiCreateGetMethod:
+        Type: AWS::ApiGateway::Method
+        Properties:
+            AuthorizationType: NONE
+            RestApiId:
+                Ref: DisposableApi
+            ResourceId: 
+                Ref: DisposableApiCreateResource
+            HttpMethod: GET
+            RequestParameters:
+                method.request.querystring.address: true
+                method.request.querystring.captcha: true
+            RequestValidatorId:
+                Ref: DisposableApiCreateRequestValidator
+            Integration:
+                Credentials:
+                    Fn::GetAtt: [ "DisposableApiMethodRole", "Arn" ]
+                IntegrationHttpMethod: POST
+                Type: AWS_PROXY
+                Uri: 
+                    Fn::Sub: 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${CreateEmailFunction.Arn}/invocations'
+
+
+    DisposableApiCreateOptionMethod:
+        Type: AWS::ApiGateway::Method
+        Properties:
+            AuthorizationType: NONE
+            RestApiId:
+                Ref: DisposableApi
+            ResourceId:
+                Ref: DisposableApiCreateResource
+            HttpMethod: OPTIONS
+            Integration:
+                IntegrationResponses:
+                -   StatusCode: 200
+                    ResponseParameters:
+                        method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                        method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
+                        method.response.header.Access-Control-Allow-Origin: "'*'"
+                    ResponseTemplates:
+                        application/json: ''
+                PassthroughBehavior: WHEN_NO_MATCH
+                RequestTemplates:
+                    application/json: '{"statusCode": 200}'
+                Type: MOCK
+            MethodResponses:
+            -   StatusCode: 200
+                ResponseModels:
+                    application/json: 'Empty'
+                ResponseParameters:
+                    method.response.header.Access-Control-Allow-Headers: false
+                    method.response.header.Access-Control-Allow-Methods: false
+                    method.response.header.Access-Control-Allow-Origin: false
+
+
+    DisposableApiListResource:
+        Type: AWS::ApiGateway::Resource
+        Properties:
+            ParentId: 
+                Fn::GetAtt: [ "DisposableApi", "RootResourceId" ]
+            PathPart: '{destination}'
+            RestApiId: 
+                Ref: DisposableApi
+
+    DisposableApiListGetMethod:
+        Type: AWS::ApiGateway::Method
+        Properties:
+            AuthorizationType: NONE
+            RestApiId:
+                Ref: DisposableApi
+            ResourceId: 
+                Ref: DisposableApiListResource
+            HttpMethod: GET
+            Integration:
+                Credentials:
+                    Fn::GetAtt: [ "DisposableApiMethodRole", "Arn" ]
+                IntegrationHttpMethod: POST
+                Type: AWS_PROXY
+                Uri: 
+                    Fn::Sub: 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetEmailsListFunction.Arn}/invocations'
+
+    DisposableApiListOptionMethod:
+        Type: AWS::ApiGateway::Method
+        Properties:
+            AuthorizationType: NONE
+            RestApiId:
+                Ref: DisposableApi
+            ResourceId:
+                Ref: DisposableApiListResource
+            HttpMethod: OPTIONS
+            Integration:
+                IntegrationResponses:
+                -   StatusCode: 200
+                    ResponseParameters:
+                        method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                        method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
+                        method.response.header.Access-Control-Allow-Origin: "'*'"
+                    ResponseTemplates:
+                        application/json: ''
+                PassthroughBehavior: WHEN_NO_MATCH
+                RequestTemplates:
+                    application/json: '{"statusCode": 200}'
+                Type: MOCK
+            MethodResponses:
+            -   StatusCode: 200
+                ResponseModels:
+                    application/json: 'Empty'
+                ResponseParameters:
+                    method.response.header.Access-Control-Allow-Headers: false
+                    method.response.header.Access-Control-Allow-Methods: false
+                    method.response.header.Access-Control-Allow-Origin: false
+
+
+    DisposableApiMessageResource:
+        Type: AWS::ApiGateway::Resource
+        Properties:
+            ParentId: 
+                Ref: DisposableApiListResource
+            PathPart: '{messageId}'
+            RestApiId: 
+                Ref: DisposableApi
+
+    DisposableApiMessageGetMethod:
+        Type: AWS::ApiGateway::Method
+        Properties:
+            AuthorizationType: NONE
+            RestApiId:
+                Ref: DisposableApi
+            ResourceId: 
+                Ref: DisposableApiMessageResource
+            HttpMethod: GET
+            Integration:
+                Credentials:
+                    Fn::GetAtt: [ "DisposableApiMethodRole", "Arn" ]
+                IntegrationHttpMethod: POST
+                Type: AWS_PROXY
+                Uri: 
+                    Fn::Sub: 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetEmailFileFunction.Arn}/invocations'
+
+    DisposableApiMessageOptionMethod:
+        Type: AWS::ApiGateway::Method
+        Properties:
+            AuthorizationType: NONE
+            RestApiId:
+                Ref: DisposableApi
+            ResourceId:
+                Ref: DisposableApiMessageResource
+            HttpMethod: OPTIONS
+            Integration:
+                IntegrationResponses:
+                -   StatusCode: 200
+                    ResponseParameters:
+                        method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                        method.response.header.Access-Control-Allow-Methods: "'GET,OPTIONS'"
+                        method.response.header.Access-Control-Allow-Origin: "'*'"
+                    ResponseTemplates:
+                        application/json: ''
+                PassthroughBehavior: WHEN_NO_MATCH
+                RequestTemplates:
+                    application/json: '{"statusCode": 200}'
+                Type: MOCK
+            MethodResponses:
+            -   StatusCode: 200
+                ResponseModels:
+                    application/json: 'Empty'
+                ResponseParameters:
+                    method.response.header.Access-Control-Allow-Headers: false
+                    method.response.header.Access-Control-Allow-Methods: false
+                    method.response.header.Access-Control-Allow-Origin: false
+       
+    DisposableApiMethodRole:
+        Type: AWS::IAM::Role
+        Properties:
+            AssumeRolePolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                -   Effect: Allow
+                    Principal:
+                        Service:
+                        - apigateway.amazonaws.com
+                    Action:
+                    - sts:AssumeRole
+            Policies:
+                -   PolicyName: Allow-logs
+                    PolicyDocument:
+                        Version: '2012-10-17'
+                        Statement:
+                        -   Effect: Allow
+                            Action:
+                            - 'logs:CreateLogGroup'
+                            - 'logs:CreateLogStream'
+                            - 'logs:PutLogEvents'
+                            Resource: arn:aws:logs:*:*:*
+                -   PolicyName: LambdaAccess
+                    PolicyDocument:
+                        Version: '2012-10-17'
+                        Statement:
+                        -   Effect: Allow
+                            Action:
+                            - 'lambda:*'
+                            Resource: 
+                            - Fn::GetAtt: [ "CreateEmailFunction", "Arn" ] 
+                            - Fn::GetAtt: [ "GetEmailsListFunction", "Arn" ] 
+                            - Fn::GetAtt: [ "GetEmailFileFunction", "Arn" ]    
+
+            
+    DisposableApiStage:
+        Type: AWS::ApiGateway::Stage
+        Properties:
+            DeploymentId: 
+                Ref: DisposableApiStageDeployment
+            Description: Disposable API Stage v0
+            RestApiId: 
+                Ref: DisposableApi
+            StageName: 'v0'
+
+    DisposableApiStageDeployment:
+        Type: AWS::ApiGateway::Deployment
+        DependsOn: 
+            - DisposableApiCreateGetMethod
+            - DisposableApiCreateOptionMethod
+            - DisposableApiListGetMethod
+            - DisposableApiListOptionMethod
+            - DisposableApiMessageGetMethod
+            - DisposableApiMessageOptionMethod
+        Properties:
+            Description: Disposable API Deployment
+            RestApiId: 
+                Ref: DisposableApi
+
+    DisposableCleanUpRule:
+        Type: AWS::Events::Rule
+        Properties: 
+            Description: "Disposable emails cleanup"
+            ScheduleExpression: "rate(30 minutes)"
+            State: "ENABLED"
+            Targets: 
+              - 
+                Arn: 
+                  Fn::GetAtt: 
+                    - "CleanUpFunction"
+                    - "Arn"
+                Id: "TargetCleanUpFunction"
+
+    DisposableCleanUpRulePermission:
+        Type: AWS::Lambda::Permission
+        Properties: 
+            FunctionName: 
+                Ref: "CleanUpFunction"
+            Action: "lambda:InvokeFunction"
+            Principal: "events.amazonaws.com"
+            SourceArn: 
+                Fn::GetAtt: 
+                    - "DisposableCleanUpRule"
+                    - "Arn"
