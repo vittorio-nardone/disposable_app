@@ -4,8 +4,6 @@ import LoginForm from './Login'
 import EmailList from './List'
 import { Paper, Typography } from '@material-ui/core';
 
-
-
 import { withStyles } from "@material-ui/core/styles";
 const styles = theme => ({
 	"@global": {
@@ -21,6 +19,9 @@ const styles = theme => ({
 	}
 });
 
+const APIEndpoint = 'https://3owap4whpb.execute-api.eu-west-1.amazonaws.com/v0/';
+const ReCaptcha_SiteKey = "6Lfb-8sUAAAAAElnudfv4yqAg5Yk3oyONVXFy0xK"; 
+
 class App extends React.Component {
   constructor(props) {
     super(props);
@@ -35,7 +36,10 @@ class App extends React.Component {
   render() {
     if (this.state.address !== '') {
       return (
-            <EmailList address={this.state.address} changeAddress={this.changeAddress.bind(this)}/>
+            <EmailList 
+              address={this.state.address} 
+              changeAddress={this.changeAddress.bind(this)} 
+              apiEndpoint={APIEndpoint}/>
       ); 
     } else {
       return (
@@ -53,7 +57,10 @@ class App extends React.Component {
                     justifyContent: "center",
                      }}>
             <Paper elevation={3}>
-              <LoginForm changeAddress={this.changeAddress.bind(this)}/>
+              <LoginForm 
+                changeAddress={this.changeAddress.bind(this)} 
+                apiEndpoint={APIEndpoint}
+                recaptcha_key={ReCaptcha_SiteKey}/>
             </Paper>
           </div>
         </div>

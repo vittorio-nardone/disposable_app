@@ -30,7 +30,7 @@ class LoginForm extends React.Component {
         } else { 
             console.log("Captcha value:", recaptchaValue);
         
-          fetch('https://9ljg1w8c6j.execute-api.eu-west-1.amazonaws.com/beta/create?address=' 
+          fetch(this.props.apiEndpoint + 'create?address=' 
              + encodeURI(this.state.address + this.state.domain)
              + '&captcha=' + recaptchaValue)
           .then(r =>  r.json().then(data => ({status: r.status, body: data})))
@@ -50,7 +50,7 @@ class LoginForm extends React.Component {
       return (
         <form onSubmit={this.handleSubmit}>
         <ReCAPTCHA
-            sitekey="6Lfb-8sUAAAAAElnudfv4yqAg5Yk3oyONVXFy0xK"
+            sitekey={this.props.recaptcha_key}
             ref={this.recaptchaRef}
             size="invisible"
         />

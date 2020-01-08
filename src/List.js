@@ -21,7 +21,7 @@ class EmailList extends React.Component {
     } 
 
     getList(force) {
-        fetch('https://9ljg1w8c6j.execute-api.eu-west-1.amazonaws.com/beta/' + this.state.address)
+        fetch(this.props.apiEndpoint + this.state.address)
         .then(res => res.json())
         .then((data) => {
             data.Items.sort(function(a,b){
@@ -133,7 +133,7 @@ class EmailList extends React.Component {
                 </TableRow>
                 ) 
             )}
-            {this.state.emails.length == 0 ? 
+            {this.state.emails.length === 0 ? 
                     <TableRow>
                         <TableCell colSpan="4">
                             <Typography variant="body1">No mails here</Typography>
@@ -147,7 +147,7 @@ class EmailList extends React.Component {
             </Paper>
             </Grid>
             <Grid item xs={6}> 
-                <EmailViewer address={this.state.address} messageId={this.state.selectedId} /> 
+                <EmailViewer address={this.state.address} messageId={this.state.selectedId} apiEndpoint={this.props.apiEndpoint}/> 
             </Grid>
           </Grid>
           

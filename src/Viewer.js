@@ -67,7 +67,7 @@ class EmailViewer extends React.Component {
 
     getMail() {
         if ((this.state.address !== '') && (this.state.messageId !== '')) {
-            fetch('https://9ljg1w8c6j.execute-api.eu-west-1.amazonaws.com/beta/' + this.state.address + '/' + this.state.messageId )
+            fetch(this.props.apiEndpoint + this.state.address + '/' + this.state.messageId )
             .then(res => res.text())
             .then((data) => {
                 let parsed = parse(data);
