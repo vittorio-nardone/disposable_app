@@ -13,6 +13,10 @@ Parameters:
         Description: DynamoDB table to store emails 
         Type: String
         Default: "disposable_emails_table"
+    SessionsTableName:
+        Description: DynamoDB table to store client sessions 
+        Type: String
+        Default: "disposable_sessions_table"  
     RuleSetName:
         Description: SES RuleSet name to be used 
         Type: String
@@ -96,6 +100,20 @@ Resources:
             TableName: 
                 Ref: EmailsTableName 
 
+    SessionsTable:
+        Type: AWS::DynamoDB::Table
+        Properties: 
+            KeySchema: 
+            -   AttributeName: "sessionId"
+                KeyType: "HASH"
+            AttributeDefinitions:
+            -   AttributeName: "sessionId"
+                AttributeType: "S"
+            ProvisionedThroughput: 
+                ReadCapacityUnits: "1"
+                WriteCapacityUnits: "1"
+            TableName: 
+                Ref: SessionsTableName
 
     IncomingMailCheckFunctionRole:
         Type: AWS::IAM::Role
@@ -171,8 +189,6 @@ Resources:
                             logger.info('## DynamoDB Client Exception')
                             logger.info(e.response['Error']['Message'])
                         else:
-                            logger.info('## DynamoDB Response')
-                            logger.info(response)
                             if 'Item' in response:
                                 item = response['Item']
                                 if item['TTL'] > int(time.time()):
@@ -275,10 +291,7 @@ Resources:
                         except ClientError as e:
                             logger.info('## DynamoDB Client Exception')
                             logger.info(e.response['Error']['Message'])
-                        else:
-                            logger.info('## DynamoDB Response')
-                            logger.info(response)
-                    
+                  
                     def lambda_handler(event, context):
                         logger.info('## ENVIRONMENT VARIABLES')
                         logger.info(os.environ)
@@ -394,19 +407,30 @@ Resources:
                             - 'dynamodb:GetItem'
                             Resource: 
                                 Fn::GetAtt: [ "AddressesTable", "Arn" ]
-
+                -   PolicyName: SessionsTablePutItem
+                    PolicyDocument:
+                        Version: '2012-10-17'
+                        Statement:
+                        -   Effect: Allow
+                            Action:
+                            - 'dynamodb:PutItem'
+                            Resource: 
+                                Fn::GetAtt: [ "SessionsTable", "Arn" ]
+            
     CreateEmailFunction:
         Type: AWS::Lambda::Function
         Properties:
             Runtime: python3.7
             Description: Create new mailbox.
-            Handler: index.lambda_handler
+            Handler: CreateEmailFunction.lambda_handler
             Role: 
                 Fn::GetAtt: [ "CreateEmailFunctionRole", "Arn" ]
             Environment:
                 Variables:
                     addresses_table_name:
                         Ref: AddressesTableName
+                    sessions_table_name:
+                        Ref: SessionsTableName
                     mailbox_ttl:
                         Ref: TTL
                     recaptcha_key:
@@ -415,124 +439,9 @@ Resources:
                         Ref: DomainName    
             Timeout: 10
             Code:
-                ZipFile:  |
-                    import boto3
-                    from botocore.exceptions import ClientError
-                    import http.client, urllib.parse
-                    import json
-                    import os
-                    import logging
-                    import time
-                    import re
-                    
-                    logger = logging.getLogger()
-                    logger.setLevel(logging.INFO)
-                    
-                    dynamodb = boto3.resource("dynamodb")
-                    table = dynamodb.Table(os.environ['addresses_table_name'])
-                    
-                    ssm = boto3.client('ssm')
-                    valid_domains = os.environ['valid_domains'].split(',')
-                    defaultTTL = int(os.environ['mailbox_ttl'])
-                    recaptcha_key = os.environ['recaptcha_key']
-                    
-                    def address_exists(address):
-                        exists = False
-                        try:
-                            response = table.get_item(
-                                Key={
-                                'address': address
-                                }
-                            )
-                        except ClientError as e:
-                            logger.info('## DynamoDB Client Exception')
-                            logger.info(e.response['Error']['Message'])
-                        else:
-                            logger.info('## DynamoDB Response')
-                            logger.info(response)
-                            if 'Item' in response:
-                                item = response['Item']
-                                if item['TTL'] > int(time.time()):
-                                    exists = True
-                        return exists
-                    
-                    def create_address(address):
-                        TTL = int(time.time()) + defaultTTL
-                        try:
-                            response = table.put_item(
-                                Item= {'address': address, 'TTL': TTL}
-                            )
-                        except ClientError as e:
-                            logger.info('## DynamoDB Client Exception')
-                            logger.info(e.response['Error']['Message'])
-                        else:
-                            logger.info('## DynamoDB Response')
-                            logger.info(response)
-                    
-                    def validate_email(address):
-                        valid = False
-                        # Do some basic regex validation 
-                        match = re.match('^[_a-z0-9-]+(\.[_a-z0-9-]+)*@[a-z0-9-]+(\.[a-z0-9-]+)*(\.[a-z]{2,4})$', address)
-                        if (match != None):
-                            domain = address.split("@")[-1]
-                            if domain in valid_domains:
-                                valid = True
-                        return valid
-                    
-                    def validate_recaptcha(token):
-                        conn = http.client.HTTPSConnection('www.google.com')
-                        headers = {"Content-type": "application/x-www-form-urlencoded"}
-                        params = urllib.parse.urlencode({'secret': recaptcha_key, 'response': token}) 
-                        conn.request('POST', '/recaptcha/api/siteverify', params, headers)
-                        response = conn.getresponse()
-                        r = response.read().decode() 
-                        logger.info('## reCAPTCHA response')
-                        logger.info(r)
-                        r = json.loads(r)
-                        return r['success']
-                        
-                    
-                    def lambda_handler(event, context):
-                        logger.info('## ENVIRONMENT VARIABLES')
-                        logger.info(os.environ)
-                        logger.info('## EVENT')
-                        logger.info(event)
-                        logger.info('## Configuration')
-                        logger.info('Domains: {}'.format(valid_domains))
-                        logger.info('TTL: {}'.format(defaultTTL))
-                        
-                        headers = {
-                                    "access-control-allow-headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
-                                    "access-control-allow-methods": "DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT",
-                                    "access-control-allow-origin": "*"
-                                }
-                        
-                        result = {"statusCode": 400, 
-                                "body": json.dumps({"message":"missing or invalid parameters"}), 
-                                "headers": headers
-                        }
-                    
-                        if event["queryStringParameters"] != None:
-                            if (("address" in event["queryStringParameters"]) and 
-                                ("captcha" in event["queryStringParameters"])):
-                                email_address = event["queryStringParameters"]["address"] 
-                                captcha = event["queryStringParameters"]["captcha"] 
-                                if validate_recaptcha(captcha):
-                                    if validate_email(email_address):
-                                        if address_exists(email_address):
-                                            message = "email address already exists"
-                                        else:
-                                            create_address(email_address)
-                                            message = "email address created"
-                                    
-                                        result = {
-                                            "statusCode": 200,
-                                            "body": json.dumps({"message":message}), 
-                                            "headers": headers
-                                        }
-                    
-                        return result                
-
+                S3Bucket: cfvn
+                S3Key: disposable/CreateEmailFunction.zip
+            
     GetEmailsListFunctionRole:
         Type: AWS::IAM::Role
         Properties:
@@ -566,6 +475,15 @@ Resources:
                             - 'dynamodb:GetItem'
                             Resource: 
                                 Fn::GetAtt: [ "EmailsTable", "Arn" ]
+                -   PolicyName: SessionsTableGetItem
+                    PolicyDocument:
+                        Version: '2012-10-17'
+                        Statement:
+                        -   Effect: Allow
+                            Action:
+                            - 'dynamodb:GetItem'
+                            Resource: 
+                                Fn::GetAtt: [ "SessionsTable", "Arn" ]
 
     GetEmailsListFunction:
         Type: AWS::Lambda::Function
@@ -579,66 +497,12 @@ Resources:
                 Variables:
                     emails_table_name:
                         Ref: EmailsTableName
+                    sessions_table_name:
+                        Ref: SessionsTableName
             Timeout: 10
             Code:
-                ZipFile:  |
-                    import boto3
-                    from botocore.exceptions import ClientError
-                    from boto3.dynamodb.conditions import Key
-                    import json
-                    import os
-                    import logging
-                    
-                    logger = logging.getLogger()
-                    logger.setLevel(logging.INFO)
-                    
-                    dynamodb = boto3.resource("dynamodb")
-                    table = dynamodb.Table(os.environ['emails_table_name'])
-                    
-                    def get_emails(destination):
-                        items = None
-                        try:
-                            filtering_exp = Key('destination').eq(destination)
-                            response = table.query(KeyConditionExpression=filtering_exp)        
-                        except ClientError as e:
-                            logger.info('## DynamoDB Client Exception')
-                            logger.info(e.response['Error']['Message'])
-                        else:
-                            logger.info('## DynamoDB Response')
-                            logger.info(response)
-                            #Clean response       
-                            for i in response['Items']:
-                                i.pop('bucketObjectKey', None)
-                                i.pop('bucketName', None)
-                            items = {'Items' : response['Items'], 'Count' : response['Count']}
-                        return items
-                    
-                    def lambda_handler(event, context):
-                        logger.info('## ENVIRONMENT VARIABLES')
-                        logger.info(os.environ)
-                        logger.info('## EVENT')
-                        logger.info(event)
-                        
-                        headers = {
-                                    "access-control-allow-headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
-                                    "access-control-allow-methods": "DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT",
-                                    "access-control-allow-origin": "*"
-                                }
-                        
-                        result = {"statusCode": 400, 
-                                "body": json.dumps({"message":"missing destination parameter"}), 
-                                "headers": headers
-                        }
-                    
-                        if event["pathParameters"] != None:
-                            if "destination" in event["pathParameters"]:
-                                destination = event["pathParameters"]["destination"]
-                                items = get_emails(destination)
-                                if items != None:
-                                    result = {"statusCode": 200, "body": json.dumps(items), "headers": headers }
-                    
-                        return result    
-
+                S3Bucket: cfvn
+                S3Key: disposable/GetEmailsListFunction.zip
 
     GetEmailFileFunctionRole:
         Type: AWS::IAM::Role
@@ -673,6 +537,15 @@ Resources:
                             - 'dynamodb:GetItem'
                             Resource: 
                                 Fn::GetAtt: [ "EmailsTable", "Arn" ]
+                -   PolicyName: SessionsTableGetItem
+                    PolicyDocument:
+                        Version: '2012-10-17'
+                        Statement:
+                        -   Effect: Allow
+                            Action:
+                            - 'dynamodb:GetItem'
+                            Resource: 
+                                Fn::GetAtt: [ "SessionsTable", "Arn" ]          
                 -   PolicyName: MailBucketGetObject
                     PolicyDocument:
                         Version: '2012-10-17'
@@ -695,6 +568,8 @@ Resources:
                 Variables:
                     emails_table_name:
                         Ref: EmailsTableName
+                    sessions_table_name:
+                        Ref: SessionsTableName
             Timeout: 10
             Code:
                 ZipFile:  | 
@@ -725,8 +600,6 @@ Resources:
                             logger.info('## DynamoDB Client Exception')
                             logger.info(e.response['Error']['Message'])
                         else:
-                            logger.info('## DynamoDB Response')
-                            logger.info(response)
                             if 'Item' in response:
                                 result = response['Item']
                         return result
@@ -746,10 +619,7 @@ Resources:
                         except ClientError as e:
                             logger.info('## DynamoDB Client Exception')
                             logger.info(e.response['Error']['Message'])
-                        else:
-                            logger.info('## DynamoDB Response')
-                            logger.info(response)
-
+ 
                     def lambda_handler(event, context):
                         logger.info('## ENVIRONMENT VARIABLES')
                         logger.info(os.environ)
@@ -820,6 +690,7 @@ Resources:
                             Resource: 
                             - Fn::GetAtt: [ "EmailsTable", "Arn" ]
                             - Fn::GetAtt: [ "AddressesTable", "Arn" ]
+                            - Fn::GetAtt: [ "SessionsTable", "Arn" ]
                 -   PolicyName: MailBucketDeleteObject
                     PolicyDocument:
                         Version: '2012-10-17'
@@ -844,6 +715,8 @@ Resources:
                         Ref: EmailsTableName
                     addresses_table_name:
                         Ref: AddressesTableName
+                    sessions_table_name:
+                        Ref: SessionsTableName
             Timeout: 10
             Code:
                 ZipFile:  | 
@@ -894,9 +767,6 @@ Resources:
                         except ClientError as e:
                             logger.error('## DynamoDB Client Exception')
                             logger.error(e.response['Error']['Message'])
-                        else:
-                            logger.info('## DynamoDB Response')
-                            logger.info(response)
                             
                     def delete_address_item(address):
                         try:
@@ -908,9 +778,6 @@ Resources:
                         except ClientError as e:
                             logger.error('## DynamoDB Client Exception')
                             logger.error(e.response['Error']['Message'])
-                        else:
-                            logger.info('## DynamoDB Response')
-                            logger.info(response)
                     
                     def find_emails(destination):
                         try:
@@ -920,8 +787,6 @@ Resources:
                             logger.error('## DynamoDB Client Exception')
                             logger.error(e.response['Error']['Message'])
                         else:
-                            logger.info('## DynamoDB Response')
-                            logger.info(response)
                             #Clean response       
                             for I in response['Items']:
                                 delete_object(I['bucketName'], I['bucketObjectKey'])
@@ -938,8 +803,6 @@ Resources:
                             logger.error('## DynamoDB Client Exception')
                             logger.error(e.response['Error']['Message'])
                         else:
-                            logger.info('## DynamoDB Response')
-                            logger.info(response)
                             for I in response['Items']:
                                 find_emails(I['address'])
                                 delete_address_item(I['address'])
@@ -976,7 +839,7 @@ Resources:
             RestApiId: 
                 Ref: DisposableApi
 
-    DisposableApiCreateRequestValidator:
+    DisposableApiRequestValidator:
         Type: AWS::ApiGateway::RequestValidator
         Properties: 
             RestApiId:
@@ -996,7 +859,7 @@ Resources:
                 method.request.querystring.address: true
                 method.request.querystring.captcha: true
             RequestValidatorId:
-                Ref: DisposableApiCreateRequestValidator
+                Ref: DisposableApiRequestValidator
             Integration:
                 Credentials:
                     Fn::GetAtt: [ "DisposableApiMethodRole", "Arn" ]
@@ -1056,6 +919,10 @@ Resources:
             ResourceId: 
                 Ref: DisposableApiListResource
             HttpMethod: GET
+            RequestParameters:
+                method.request.querystring.sessionid: true
+            RequestValidatorId:
+                Ref: DisposableApiRequestValidator
             Integration:
                 Credentials:
                     Fn::GetAtt: [ "DisposableApiMethodRole", "Arn" ]
@@ -1114,6 +981,10 @@ Resources:
             ResourceId: 
                 Ref: DisposableApiMessageResource
             HttpMethod: GET
+            RequestParameters:
+                method.request.querystring.sessionid: true
+            RequestValidatorId:
+                Ref: DisposableApiRequestValidator
             Integration:
                 Credentials:
                     Fn::GetAtt: [ "DisposableApiMethodRole", "Arn" ]
