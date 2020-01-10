@@ -48,16 +48,13 @@ This is provided by CloudFormation as an output value. It is possible to get it 
 
 To create the React web application, once the repository has been cloned, it is necessary to configure some parameters at the beginning of App.js file:
 
-//  - your APIEndpoint
-
+`//  - your APIEndpoint
 const APIEndpoint = <your_API_endpoint>; 
 
 //  - your ReCaptcha Site Key
-
 const ReCaptcha_SiteKey = <your_reCAPTCHA_site_key>;  
  
 //  - your email domain 
-
 const email_domain = <your_domain>;
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
