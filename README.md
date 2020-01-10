@@ -1,3 +1,62 @@
+# Disposable-mail
+
+A disposable and customizable email service on your own internet domain, using AWS building blocks. The service is totally serverless.
+CloudFormation template and React/Material-UI client web app source code.
+
+Read more on my [blog](https://www.vittorionardone.it/en/digital-transformation-blog/).
+
+   - [First post - Overview and Amazon SES Configuration](https://www.vittorionardone.it/en/2020/01/10/your-disposable-emails-on-aws/) 
+
+   - Second post - Backend details and installation (available soon)
+   
+   - Third post - Frontend details and installation (available soon)
+
+
+![Architecture](aws/AWS_architecture.png?raw=true "Architecture")
+
+# Requirements
+
+   - an AWS account
+   - an internet domain (a third level is better) on Route53 or anywhere it’s possible to configure the DNS zone
+   - a pair of Google reCAPTCHA keys (site / private) valid for your domain ([reCAPTCHA console](https://www.google.com/recaptcha/admin))
+
+# Installation (backend)
+
+To build the entire backend infrastructure you can use the CloudFormation console or AWS CLI:
+
+`aws cloudformation create-stack --stack-name <name> --template-url <url> --parameters <parameters> --capabilities CAPABILITY_IAM`
+
+Description:
+
+      <name>
+            the stack name 
+            
+      <url> 
+            template URL https://cfvn.s3-eu-west-1.amazonaws.com/disposable.yml
+            
+      <parameters>
+            ParameterKey=DomainName,ParameterValue=<your_domain>  
+            ParameterKey=ReCaptchaPrivateKey,ParameterValue=<your_private_captcha_key>
+
+Once the stack is created, you need to know the newly created endpoint to be used in web application configuration. 
+This is provided by CloudFormation as an output value. It is possible to get it in the CloudFormation console or directly from AWS CLI:
+
+`aws cloudformation describe-stacks --stack-name <name> --query Stacks[0].Outputs[0].OutputValue`
+
+
+# Installation (frontend)
+
+To create the React web application, once the repository has been cloned, it is necessary to configure some parameters at the beginning of App.js file:
+
+//  - your APIEndpoint 
+const APIEndpoint = <your_API_endpoint>; 
+
+//  - your ReCaptcha Site Key  
+const ReCaptcha_SiteKey = <your_reCAPTCHA_site_key>;  
+ 
+//  - your email domain 
+const email_domain = <your_domain>;
+
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
 ## Available Scripts
@@ -27,42 +86,4 @@ Your app is ready to be deployed!
 
 See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
 
-### `npm run eject`
 
-**Note: this is a one-way operation. Once you `eject`, you can’t go back!**
-
-If you aren’t satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
-
-Instead, it will copy all the configuration files and the transitive dependencies (Webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you’re on your own.
-
-You don’t have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn’t feel obligated to use this feature. However we understand that this tool wouldn’t be useful if you couldn’t customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: https://facebook.github.io/create-react-app/docs/code-splitting
-
-### Analyzing the Bundle Size
-
-This section has moved here: https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size
-
-### Making a Progressive Web App
-
-This section has moved here: https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app
-
-### Advanced Configuration
-
-This section has moved here: https://facebook.github.io/create-react-app/docs/advanced-configuration
-
-### Deployment
-
-This section has moved here: https://facebook.github.io/create-react-app/docs/deployment
-
-### `npm run build` fails to minify
-
-This section has moved here: https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify
