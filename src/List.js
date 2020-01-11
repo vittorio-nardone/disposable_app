@@ -10,7 +10,7 @@ class EmailList extends React.Component {
 
     constructor(props) {
       super(props);
-      this.state = {address: props.address, emails: [], selectedId: ''};
+      this.state = {address: props.address, emails: [], selectedId: '', sessionid: props.sessionid};
       console.log(this.state)
     }
 
@@ -21,18 +21,26 @@ class EmailList extends React.Component {
     } 
 
     getList(force) {
-        fetch(this.props.apiEndpoint + this.state.address)
-        .then(res => res.json())
-        .then((data) => {
-            data.Items.sort(function(a,b){
-                if (a.timestamp > b.timestamp) { return -1 } else { return 1 }
-            })         
-            if ((this.listIsChanged(data.Items) || force)) {
-                    this.setState({ emails: data.Items });
-                    if ((this.state.selectedId === '') && (data.Items.length > 0)) {
-                        this.setState({ selectedId: data.Items[0].messageId });   
+        fetch(this.props.apiEndpoint + this.state.address + '?sessionid=' + encodeURI(this.props.sessionid))
+        .then(response => {
+            const statusCode = response.status;
+            const data = response.json();
+            return Promise.all([statusCode, data]);
+          })
+        .then(res => {
+            console.log(res);
+            if (res[0] === 400) {
+                this.logout();
+            } else {      
+                res[1].Items.sort(function(a,b){
+                    if (a.timestamp > b.timestamp) { return -1 } else { return 1 }
+                });         
+                if ((this.listIsChanged(res[1].Items) || force)) {
+                    this.setState({ emails: res[1].Items });
+                    if ((this.state.selectedId === '') && (res[1].Items.length > 0)) {
+                        this.setState({ selectedId: res[1].Items[0].messageId });   
                     }
-                    console.log(data.Items)
+                }
             }
         })
         .catch(console.log)
@@ -60,7 +68,7 @@ class EmailList extends React.Component {
     }
 
     logout() {
-        this.props.changeAddress('');
+        this.props.changeAddress('','');
     }
   
     capitalize(sentence, lower) {
@@ -147,7 +155,7 @@ class EmailList extends React.Component {
             </Paper>
             </Grid>
             <Grid item xs={6}> 
-                <EmailViewer address={this.state.address} messageId={this.state.selectedId} apiEndpoint={this.props.apiEndpoint}/> 
+                <EmailViewer address={this.state.address} messageId={this.state.selectedId} sessionid={this.state.sessionid} apiEndpoint={this.props.apiEndpoint}/> 
             </Grid>
           </Grid>
           

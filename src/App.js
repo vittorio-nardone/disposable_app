@@ -9,7 +9,7 @@ import { withStyles } from "@material-ui/core/styles";
 // Please change these values with:
 
 //  - your APIEndpoint. It's an output value of AWS CloudFormation template 
-const APIEndpoint = 'https://3owap4whpb.execute-api.eu-west-1.amazonaws.com/v0/';
+const APIEndpoint = 'https://1nbf11f5ha.execute-api.eu-west-1.amazonaws.com/v0/';
 
 //  - your ReCaptcha Site Key. Get it at https://www.google.com/recaptcha/admin 
 const ReCaptcha_SiteKey = "6Lfb-8sUAAAAAElnudfv4yqAg5Yk3oyONVXFy0xK"; 
@@ -35,12 +35,12 @@ const styles = theme => ({
 class App extends React.Component {
   constructor(props) {
     super(props);
-    this.state = {address: ''};
+    this.state = {address: '', sessionid: ''};
 
   }
 
-  changeAddress(address) {
-    this.setState({address: address});
+  changeAddress(address, sessionid) {
+    this.setState({address: address, sessionid: sessionid});
   }
 
   render() {
@@ -48,6 +48,7 @@ class App extends React.Component {
       return (
             <EmailList 
               address={this.state.address} 
+              sessionid={this.state.sessionid}
               changeAddress={this.changeAddress.bind(this)} 
               apiEndpoint={APIEndpoint}/>
       ); 

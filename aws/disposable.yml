@@ -21,10 +21,14 @@ Parameters:
         Description: SES RuleSet name to be used 
         Type: String
         Default: "default-rule-set"
-    TTL:
+    MailboxTTL:
         Description: Life (seconds) of mailbox
         Type: String
         Default: "3600"
+    SessionTTL:
+        Description: Session expiration in seconds
+        Type: String
+        Default: "600"
     ReCaptchaPrivateKey:
         Description: ReCaptcha private key to validate mailbox creation requests  
         Type: String
@@ -432,7 +436,9 @@ Resources:
                     sessions_table_name:
                         Ref: SessionsTableName
                     mailbox_ttl:
-                        Ref: TTL
+                        Ref: MailboxTTL
+                    session_ttl:
+                        Ref: SessionTTL   
                     recaptcha_key:
                         Ref: ReCaptchaPrivateKey
                     valid_domains:
@@ -490,7 +496,7 @@ Resources:
         Properties:
             Runtime: python3.7
             Description: Get list of emails for a specific address.
-            Handler: index.lambda_handler
+            Handler: GetEmailsListFunction.lambda_handler
             Role: 
                 Fn::GetAtt: [ "GetEmailsListFunctionRole", "Arn" ]
             Environment:
@@ -561,7 +567,7 @@ Resources:
         Properties:
             Runtime: python3.7
             Description: Get contents of a specific messageId.
-            Handler: index.lambda_handler
+            Handler: GetEmailFileFunction.lambda_handler
             Role: 
                 Fn::GetAtt: [ "GetEmailFileFunctionRole", "Arn" ]
             Environment:
@@ -572,87 +578,9 @@ Resources:
                         Ref: SessionsTableName
             Timeout: 10
             Code:
-                ZipFile:  | 
-                    import boto3
-                    from botocore.exceptions import ClientError
-                    import json
-                    import os
-                    import logging
+                S3Bucket: cfvn
+                S3Key: disposable/GetEmailFileFunction.zip
 
-                    logger = logging.getLogger()
-                    logger.setLevel(logging.INFO)
-
-                    dynamodb = boto3.resource("dynamodb")
-                    table = dynamodb.Table(os.environ['emails_table_name'])
-
-                    s3 = boto3.client('s3')
-
-                    def get_email_file(destination, messageId):
-                        result = None
-                        try:
-                            response = table.get_item(
-                                Key={
-                                'destination': destination,
-                                'messageId' : messageId
-                                }
-                            )
-                        except ClientError as e:
-                            logger.info('## DynamoDB Client Exception')
-                            logger.info(e.response['Error']['Message'])
-                        else:
-                            if 'Item' in response:
-                                result = response['Item']
-                        return result
-
-
-                    def set_as_readed(destination, messageId):
-                        result = None
-                        try:
-                            response = table.update_item(
-                                Key={
-                                'destination': destination,
-                                'messageId' : messageId
-                                },
-                                UpdateExpression="SET isNew = :updated",                   
-                                ExpressionAttributeValues={':updated': 'false'}
-                            )
-                        except ClientError as e:
-                            logger.info('## DynamoDB Client Exception')
-                            logger.info(e.response['Error']['Message'])
- 
-                    def lambda_handler(event, context):
-                        logger.info('## ENVIRONMENT VARIABLES')
-                        logger.info(os.environ)
-                        logger.info('## EVENT')
-                        logger.info(event)
-                        
-                        headers = {
-                                    "access-control-allow-headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",
-                                    "access-control-allow-methods": "DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT",
-                                    "access-control-allow-origin": "*"
-                                }
-                        
-                        
-                        result = {"statusCode": 400, "body": json.dumps({"body": "missing parameters"}), "headers": headers }
-                        
-                        if event["pathParameters"] != None:
-                            destination = event["pathParameters"]["destination"]
-                            messageId = event["pathParameters"]["messageId"]
-                            email_file = get_email_file(destination, messageId) 
-                            if email_file != None:
-                                data = s3.get_object(Bucket=email_file['bucketName'], Key=email_file['bucketObjectKey'])
-                                contents = data['Body'].read().decode('utf-8')
-                                headers.update({"content-type": "message/rfc822"})
-                                result = {
-                                    "statusCode": 200,
-                                    "headers": headers,
-                                    "body":  contents 
-                                }
-                                set_as_readed(destination, messageId)
-                            else:
-                                result = {"statusCode": 401, "body": json.dumps({"message":"not found"}), "headers": headers }
-
-                        return result
 
     CleanUpFunctionRole:
         Type: AWS::IAM::Role
@@ -706,7 +634,7 @@ Resources:
         Properties:
             Runtime: python3.7
             Description: Empty and delete expired mailboxes.
-            Handler: index.lambda_handler
+            Handler: CleanUpFunction.lambda_handler
             Role: 
                 Fn::GetAtt: [ "CleanUpFunctionRole", "Arn" ]
             Environment:
@@ -719,104 +647,8 @@ Resources:
                         Ref: SessionsTableName
             Timeout: 10
             Code:
-                ZipFile:  | 
-                    import boto3
-                    from botocore.exceptions import ClientError
-                    from boto3.dynamodb.conditions import Key, Attr
-                    import json
-                    import os
-                    import logging
-                    import time
-                    
-                    logger = logging.getLogger()
-                    logger.setLevel(logging.INFO)
-                    
-                    dynamodb = boto3.resource("dynamodb")
-                    s3 = boto3.client('s3')
-                    
-                    addresses_table = dynamodb.Table(os.environ['addresses_table_name'])
-                    emails_table = dynamodb.Table(os.environ['emails_table_name'])
-                    
-                    
-                    def delete_object(bucket_name, object_name):
-                        """Delete an object from an S3 bucket
-                    
-                        :param bucket_name: string
-                        :param object_name: string
-                        :return: True if the referenced object was deleted, otherwise False
-                        """
-                        logger.info('## Deleting S3')
-                        logger.info(bucket_name + object_name)
-                        
-                        # Delete the object
-                        try:
-                            s3.delete_object(Bucket=bucket_name, Key=object_name)
-                        except ClientError as e:
-                            logger.error(e)
-                            return False
-                        return True
-                    
-                    def delete_email_item(destination, messageId):
-                        try:
-                            response = emails_table.delete_item(
-                                Key={
-                                'destination': destination,
-                                'messageId': messageId
-                                }
-                            )
-                        except ClientError as e:
-                            logger.error('## DynamoDB Client Exception')
-                            logger.error(e.response['Error']['Message'])
-                            
-                    def delete_address_item(address):
-                        try:
-                            response = addresses_table.delete_item(
-                                Key={
-                                'address': address
-                                }
-                            )
-                        except ClientError as e:
-                            logger.error('## DynamoDB Client Exception')
-                            logger.error(e.response['Error']['Message'])
-                    
-                    def find_emails(destination):
-                        try:
-                            filtering_exp = Key('destination').eq(destination)
-                            response = emails_table.query(KeyConditionExpression=filtering_exp)        
-                        except ClientError as e:
-                            logger.error('## DynamoDB Client Exception')
-                            logger.error(e.response['Error']['Message'])
-                        else:
-                            #Clean response       
-                            for I in response['Items']:
-                                delete_object(I['bucketName'], I['bucketObjectKey'])
-                                delete_email_item(destination, I['messageId'])
-                                
-                    def cleanup():
-                        #get expired addresses
-                        try:
-                            response = addresses_table.scan(
-                                FilterExpression = Attr('TTL').lt(int(time.time())),
-                                ProjectionExpression = "address"
-                            )
-                        except ClientError as e:
-                            logger.error('## DynamoDB Client Exception')
-                            logger.error(e.response['Error']['Message'])
-                        else:
-                            for I in response['Items']:
-                                find_emails(I['address'])
-                                delete_address_item(I['address'])
-                    
-                    def lambda_handler(event, context):
-                        logger.info('## ENVIRONMENT VARIABLES')
-                        logger.info(os.environ)
-                        logger.info('## EVENT')
-                        logger.info(event)
-                        
-                        result = {"statusCode": 200, "body": "cleanup"}
-                        cleanup()
-                        
-                        return result
+                S3Bucket: cfvn
+                S3Key: disposable/CleanUpFunction.zip
 
 
     DisposableApi:
@@ -839,13 +671,6 @@ Resources:
             RestApiId: 
                 Ref: DisposableApi
 
-    DisposableApiRequestValidator:
-        Type: AWS::ApiGateway::RequestValidator
-        Properties: 
-            RestApiId:
-                Ref: DisposableApi
-            ValidateRequestParameters: true
-
     DisposableApiCreateGetMethod:
         Type: AWS::ApiGateway::Method
         Properties:
@@ -855,11 +680,6 @@ Resources:
             ResourceId: 
                 Ref: DisposableApiCreateResource
             HttpMethod: GET
-            RequestParameters:
-                method.request.querystring.address: true
-                method.request.querystring.captcha: true
-            RequestValidatorId:
-                Ref: DisposableApiRequestValidator
             Integration:
                 Credentials:
                     Fn::GetAtt: [ "DisposableApiMethodRole", "Arn" ]
@@ -919,10 +739,6 @@ Resources:
             ResourceId: 
                 Ref: DisposableApiListResource
             HttpMethod: GET
-            RequestParameters:
-                method.request.querystring.sessionid: true
-            RequestValidatorId:
-                Ref: DisposableApiRequestValidator
             Integration:
                 Credentials:
                     Fn::GetAtt: [ "DisposableApiMethodRole", "Arn" ]
@@ -981,10 +797,6 @@ Resources:
             ResourceId: 
                 Ref: DisposableApiMessageResource
             HttpMethod: GET
-            RequestParameters:
-                method.request.querystring.sessionid: true
-            RequestValidatorId:
-                Ref: DisposableApiRequestValidator
             Integration:
                 Credentials:
                     Fn::GetAtt: [ "DisposableApiMethodRole", "Arn" ]

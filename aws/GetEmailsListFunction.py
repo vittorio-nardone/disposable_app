@@ -4,6 +4,7 @@ from boto3.dynamodb.conditions import Key
 import json
 import os
 import logging
+import time
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -64,14 +65,14 @@ def lambda_handler(event, context):
             "headers": headers
     }
 
-    if event["pathParameters"] != None:
-        
+    if event["queryStringParameters"] != None:
         if "sessionid" in event["queryStringParameters"]:
-            if session_is_valid(event["queryStringParameters"]["sessionid"]):
+            if event["pathParameters"] != None:
                 if "destination" in event["pathParameters"]:
-                    destination = event["pathParameters"]["destination"]
-                    items = get_emails(destination)
-                    if items != None:
-                        result = {"statusCode": 200, "body": json.dumps(items), "headers": headers }
+                    if session_is_valid(event["queryStringParameters"]["sessionid"]):
+                        destination = event["pathParameters"]["destination"]
+                        items = get_emails(destination)
+                        if items != None:
+                            result = {"statusCode": 200, "body": json.dumps(items), "headers": headers }
 
     return result    

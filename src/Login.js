@@ -37,7 +37,7 @@ class LoginForm extends React.Component {
             console.log(r);
             console.log('Response from API: ' + r.body.message);
             if (r.status === 200) {
-              this.props.changeAddress(this.state.address + this.props.email_domain);  
+              this.props.changeAddress(this.state.address + this.props.email_domain, r.body.sessionid);  
             }
         })
         .catch(console.log);

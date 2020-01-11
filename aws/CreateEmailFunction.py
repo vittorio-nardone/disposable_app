@@ -17,7 +17,9 @@ sessions_table = dynamodb.Table(os.environ['sessions_table_name'])
 
 ssm = boto3.client('ssm')
 valid_domains = os.environ['valid_domains'].split(',')
-defaultTTL = int(os.environ['mailbox_ttl'])
+mailboxTTL = int(os.environ['mailbox_ttl'])
+sessionTTL = int(os.environ['session_ttl'])
+
 recaptcha_key = os.environ['recaptcha_key']
 
 def address_exists(address):
@@ -39,7 +41,7 @@ def address_exists(address):
     return exists
 
 def create_address(address):
-    TTL = int(time.time()) + defaultTTL
+    TTL = int(time.time()) + mailboxTTL
     try:
         response = addresses_table.put_item(
             Item= {'address': address, 'TTL': TTL}
@@ -50,10 +52,10 @@ def create_address(address):
 
 def create_session():
     session_id = str(uuid.uuid4())
-    TTL = int(time.time()) + defaultTTL
+    TTL = int(time.time()) + sessionTTL
     try:
         response = sessions_table.put_item(
-            Item= {'sessionID': session_id, 'TTL': TTL}
+            Item= {'sessionId': session_id, 'TTL': TTL}
         )
     except ClientError as e:
         logger.info('## DynamoDB Client Exception')
@@ -89,7 +91,7 @@ def lambda_handler(event, context):
     logger.info(event)
     logger.info('## Configuration')
     logger.info('Domains: {}'.format(valid_domains))
-    logger.info('TTL: {}'.format(defaultTTL))
+    logger.info('TTL: {}/{}'.format(mailboxTTL,sessionTTL))
     
     headers = {
                 "access-control-allow-headers": "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token",

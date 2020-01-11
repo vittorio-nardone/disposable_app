@@ -8,6 +8,7 @@ class EmailViewer extends React.Component {
       super(props);
       this.state = {address: props.address, 
                     messageId: props.messageId,
+                    sessionid: props.sessionid,
                     messageData: '',
                     messageSubject: '',
                     messageFrom: '',
@@ -67,7 +68,8 @@ class EmailViewer extends React.Component {
 
     getMail() {
         if ((this.state.address !== '') && (this.state.messageId !== '')) {
-            fetch(this.props.apiEndpoint + this.state.address + '/' + this.state.messageId )
+            fetch(this.props.apiEndpoint + this.state.address + '/' + this.state.messageId +
+                  '?sessionid=' + encodeURI(this.state.sessionid))
             .then(res => res.text())
             .then((data) => {
                 let parsed = parse(data);
