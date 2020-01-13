@@ -4,6 +4,8 @@ import LoginForm from './Login'
 import EmailList from './List'
 import { Paper, Typography } from '@material-ui/core';
 import { withStyles } from "@material-ui/core/styles";
+import ReactGA from 'react-ga';
+import Helmet from "react-helmet";
 
 /////////////////////////////////////////////////////////////////////////////////
 // Please change these values with:
@@ -40,6 +42,11 @@ class App extends React.Component {
   }
 
   changeAddress(address, sessionid) {
+    if (address !== '') {
+      ReactGA.event({ category: "Mailbox", action: "Login",});
+    } else {
+      ReactGA.event({ category: "Mailbox", action: "Logout",});
+    }
     this.setState({address: address, sessionid: sessionid});
   }
 
@@ -57,6 +64,11 @@ class App extends React.Component {
         <div className="App" styles={{ backgroundImage:"url(${background})",
                                        backgroundSize: "cover",
                                        overflow: "hidden" }}>
+
+          <Helmet>  
+            <title>{'Disposable Email'}</title>
+          </Helmet>   
+
           <div className="App-header">
             <Typography variant="h3"> 
                 <b>Disposabl</b><i>e-mail</i>

@@ -2,6 +2,7 @@ import React from 'react';
 import { Typography, CircularProgress, Card, CardContent, Paper } from '@material-ui/core';
 import parse from 'emailjs-mime-parser'
 import './App.css';
+import ReactGA from 'react-ga';
 
 class EmailViewer extends React.Component {
     constructor(props) {
@@ -68,6 +69,9 @@ class EmailViewer extends React.Component {
 
     getMail() {
         if ((this.state.address !== '') && (this.state.messageId !== '')) {
+
+            ReactGA.event({ category: "Mailbox", action: "Email viewed",});
+
             fetch(this.props.apiEndpoint + this.state.address + '/' + this.state.messageId +
                   '?sessionid=' + encodeURI(this.state.sessionid))
             .then(res => res.text())

@@ -11,7 +11,9 @@
     "emailjs-mime-parser": "^2.0.7",
     "react": "^16.12.0",
     "react-dom": "^16.12.0",
+    "react-ga": "^2.7.0",
     "react-google-recaptcha": "^2.0.1",
+    "react-helmet": "^5.2.1",
     "react-scripts": "3.3.0"
   },
   "scripts": {

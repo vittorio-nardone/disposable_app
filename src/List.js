@@ -4,6 +4,7 @@ import { AppBar, Grid, Tooltip, IconButton, Typography, Paper, TableContainer, T
 import RefreshIcon from '@material-ui/icons/Refresh';
 import ExitToAppIcon from '@material-ui/icons/ExitToApp'
 import EmailViewer from './Viewer';
+import Helmet from "react-helmet";
 
 class EmailList extends React.Component {
     intervalID;
@@ -36,6 +37,7 @@ class EmailList extends React.Component {
                     if (a.timestamp > b.timestamp) { return -1 } else { return 1 }
                 });         
                 if ((this.listIsChanged(res[1].Items) || force)) {
+
                     this.setState({ emails: res[1].Items });
                     if ((this.state.selectedId === '') && (res[1].Items.length > 0)) {
                         this.setState({ selectedId: res[1].Items[0].messageId });   
@@ -86,9 +88,20 @@ class EmailList extends React.Component {
     }
 
     render() {
+
+        const newMails = this.state.emails.filter(email => email.isNew === 'true');
+        let title = 'Disposable Email';
+        if (newMails.length > 0) {
+            title = '(' + newMails.length + ') Disposable Email';
+        } 
+
         return (
           <Grid container spacing={3}>   
-          
+
+          <Helmet>  
+            <title>{title}</title>
+          </Helmet>   
+
           <AppBar position="static">  
             <Toolbar>
                 <Typography style={{flex: 1,}}>
