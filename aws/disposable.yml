@@ -5,6 +5,9 @@ Parameters:
     DomainName:
         Description: Domain name to be used
         Type: String
+    ReCaptchaPrivateKey:
+        Description: ReCaptcha private key to validate mailbox creation requests  
+        Type: String    
     AddressesTableName:
         Description: DynamoDB table to store valid addresses
         Type: String
@@ -29,15 +32,15 @@ Parameters:
         Description: Session expiration in seconds
         Type: String
         Default: "600"
-    ReCaptchaPrivateKey:
-        Description: ReCaptcha private key to validate mailbox creation requests  
-        Type: String
-        Default: ""
     SourceBucket:
         Description: Lambda functions source S3 Bucket
         Type: String
         Default: "cfvn" 
-      
+    SourceBucketFolder:
+        Description: Lambda functions folder in S3 Bucket
+        Type: String
+        Default: "disposable" 
+          
 Outputs:
     DisposableApiEndpoint:
         Description: API Endpoint to serve Client App
@@ -161,7 +164,7 @@ Resources:
         Properties:
             Runtime: python3.7
             Description: Invoked by SES to check if mail address exists.
-            Handler: index.lambda_handler
+            Handler: IncomingMailCheckFunction.lambda_handler
             Role: 
                 Fn::GetAtt: [ "IncomingMailCheckFunctionRole", "Arn" ]
             Environment:
@@ -172,54 +175,11 @@ Resources:
                         Ref: EmailsTableName
             Timeout: 10    
             Code:
-                ZipFile:  |
-                    import boto3
-                    from botocore.exceptions import ClientError
-                    import os
-                    import logging
-                    import time
-                    
-                    logger = logging.getLogger()
-                    logger.setLevel(logging.INFO)
-                    
-                    dynamodb = boto3.resource("dynamodb")
-                    table = dynamodb.Table(os.environ['addresses_table_name'])
-                    
-                    def address_exists(address):
-                        exists = False
-                        try:
-                            response = table.get_item(
-                                Key={
-                                'address': address
-                                }
-                            )
-                        except ClientError as e:
-                            logger.info('## DynamoDB Client Exception')
-                            logger.info(e.response['Error']['Message'])
-                        else:
-                            if 'Item' in response:
-                                item = response['Item']
-                                if item['TTL'] > int(time.time()):
-                                    exists = True
-                        return exists
-                    
-                    def lambda_handler(event, context):
-                        logger.info('## ENVIRONMENT VARIABLES')
-                        logger.info(os.environ)
-                        logger.info('## EVENT')
-                        logger.info(event)
-                    
-                        for record in event['Records']:
-                            to_address = record['ses']['mail']['destination'][0]
-                            logger.info('## DESTINATION')
-                            logger.info(to_address)
-                            if address_exists(to_address):
-                                return {'disposition': 'CONTINUE'}
-                            else:
-                                return {'disposition': 'STOP_RULE_SET'}
-                            break;
-
-
+                S3Bucket: 
+                    Ref: SourceBucket
+                S3Key: 
+                    Fn::Sub: '${SourceBucketFolder}/IncomingMailCheckFunction.zip'
+ 
     StoreEmailFunctionRole:
         Type: AWS::IAM::Role
         Properties:
@@ -258,7 +218,7 @@ Resources:
         Properties:
             Runtime: python3.7
             Description: Incoming mail topic subscriber to store emails in db.
-            Handler: index.lambda_handler
+            Handler: StoreEmailFunction.lambda_handler
             Role: 
                 Fn::GetAtt: [ "StoreEmailFunctionRole", "Arn" ]
             Environment:
@@ -269,47 +229,11 @@ Resources:
                         Ref: EmailsTableName
             Timeout: 10
             Code:
-                ZipFile:  |
-                    import boto3
-                    from botocore.exceptions import ClientError
-                    import json
-                    import os
-                    import logging
-                    import time
-
-                    logger = logging.getLogger()
-                    logger.setLevel(logging.INFO)
-
-                    dynamodb = boto3.resource("dynamodb")
-                    table = dynamodb.Table(os.environ['emails_table_name'])
-
-                    def store_email(email, receipt):
-                        try:
-                            response = table.put_item(
-                                Item= {'destination': email['destination'][0],
-                                    'messageId': email['messageId'],
-                                    'timestamp': email['timestamp'],
-                                    'source': email['source'],
-                                    'commonHeaders': email['commonHeaders'],
-                                    'bucketName': receipt['action']['bucketName'],
-                                    'bucketObjectKey': receipt['action']['objectKey'],
-                                    'isNew': "true"
-                                }
-                            )
-                        except ClientError as e:
-                            logger.info('## DynamoDB Client Exception')
-                            logger.info(e.response['Error']['Message'])
-                  
-                    def lambda_handler(event, context):
-                        logger.info('## ENVIRONMENT VARIABLES')
-                        logger.info(os.environ)
-                        logger.info('## EVENT')
-                        logger.info(event)
-
-                        message = json.loads(event['Records'][0]['Sns']['Message'])
-                        store_email(message['mail'], message['receipt'])
-
-    
+                S3Bucket: 
+                    Ref: SourceBucket
+                S3Key: 
+                    Fn::Sub: '${SourceBucketFolder}/StoreEmailFunction.zip'
+     
     IncomingMailTopic:
         Type: AWS::SNS::Topic
         Properties:
@@ -451,7 +375,8 @@ Resources:
             Code:
                 S3Bucket: 
                     Ref: SourceBucket
-                S3Key: disposable/CreateEmailFunction.zip
+                S3Key: 
+                    Fn::Sub: '${SourceBucketFolder}/CreateEmailFunction.zip'
             
     GetEmailsListFunctionRole:
         Type: AWS::IAM::Role
@@ -514,7 +439,8 @@ Resources:
             Code:
                 S3Bucket: 
                     Ref: SourceBucket
-                S3Key: disposable/GetEmailsListFunction.zip
+                S3Key: 
+                    Fn::Sub: '${SourceBucketFolder}/GetEmailsListFunction.zip'
 
     GetEmailFileFunctionRole:
         Type: AWS::IAM::Role
@@ -586,8 +512,8 @@ Resources:
             Code:
                 S3Bucket: 
                     Ref: SourceBucket
-                S3Key: disposable/GetEmailFileFunction.zip
-
+                S3Key: 
+                    Fn::Sub: '${SourceBucketFolder}/GetEmailFileFunction.zip'
 
     CleanUpFunctionRole:
         Type: AWS::IAM::Role
@@ -656,8 +582,8 @@ Resources:
             Code:
                 S3Bucket: 
                     Ref: SourceBucket
-                S3Key: disposable/CleanUpFunction.zip
-
+                S3Key: 
+                    Fn::Sub: '${SourceBucketFolder}/CleanUpFunction.zip'
 
     DisposableApi:
         Type: AWS::ApiGateway::RestApi

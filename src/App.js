@@ -9,7 +9,7 @@ import { withStyles } from "@material-ui/core/styles";
 // Please change these values with:
 
 //  - your APIEndpoint. It's an output value of AWS CloudFormation template 
-const APIEndpoint = 'https://1nbf11f5ha.execute-api.eu-west-1.amazonaws.com/v0/';
+const APIEndpoint = 'https://ebw8nmxxxa.execute-api.eu-west-1.amazonaws.com/v0/';
 
 //  - your ReCaptcha Site Key. Get it at https://www.google.com/recaptcha/admin 
 const ReCaptcha_SiteKey = "6Lfb-8sUAAAAAElnudfv4yqAg5Yk3oyONVXFy0xK"; 
