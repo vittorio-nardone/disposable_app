@@ -33,6 +33,10 @@ Parameters:
         Description: ReCaptcha private key to validate mailbox creation requests  
         Type: String
         Default: ""
+    SourceBucket:
+        Description: Lambda functions source S3 Bucket
+        Type: String
+        Default: "cfvn" 
       
 Outputs:
     DisposableApiEndpoint:
@@ -445,7 +449,8 @@ Resources:
                         Ref: DomainName    
             Timeout: 10
             Code:
-                S3Bucket: cfvn
+                S3Bucket: 
+                    Ref: SourceBucket
                 S3Key: disposable/CreateEmailFunction.zip
             
     GetEmailsListFunctionRole:
@@ -507,7 +512,8 @@ Resources:
                         Ref: SessionsTableName
             Timeout: 10
             Code:
-                S3Bucket: cfvn
+                S3Bucket: 
+                    Ref: SourceBucket
                 S3Key: disposable/GetEmailsListFunction.zip
 
     GetEmailFileFunctionRole:
@@ -578,7 +584,8 @@ Resources:
                         Ref: SessionsTableName
             Timeout: 10
             Code:
-                S3Bucket: cfvn
+                S3Bucket: 
+                    Ref: SourceBucket
                 S3Key: disposable/GetEmailFileFunction.zip
 
 
@@ -647,7 +654,8 @@ Resources:
                         Ref: SessionsTableName
             Timeout: 10
             Code:
-                S3Bucket: cfvn
+                S3Bucket: 
+                    Ref: SourceBucket
                 S3Key: disposable/CleanUpFunction.zip
 
 

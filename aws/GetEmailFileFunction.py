@@ -33,7 +33,6 @@ def get_email_file(destination, messageId):
 
 
 def set_as_readed(destination, messageId):
-    result = None
     try:
         response = emails_table.update_item(
             Key={
@@ -97,7 +96,8 @@ def lambda_handler(event, context):
                                 "headers": headers,
                                 "body":  contents 
                             }
-                            set_as_readed(destination, messageId)
+                            if email_file['isNew'] == 'true':
+                                set_as_readed(destination, messageId)
                         else:
                             result = {"statusCode": 401, "body": json.dumps({"message":"not found"}), "headers": headers }
 
