@@ -5,14 +5,9 @@ Online demo -> http://disposable.aws.gotocloud.it/
 A disposable and customizable email service on your own internet domain, using AWS building blocks. The service is totally serverless.
 CloudFormation template and React/Material-UI client web app source code.
 
-Read more on my [blog](https://www.vittorionardone.it/en/digital-transformation-blog/).
+Read more on my blog:
 
-   - [First post - Overview and Amazon SES Configuration](https://www.vittorionardone.it/en/2020/01/10/your-disposable-emails-on-aws/) 
-
-   - Second post - Backend details and installation (available soon)
-   
-   - Third post - Frontend details and installation (available soon)
-
+   - [Your disposable emails on AWS](https://www.vittorionardone.it/en/2020/01/10/your-disposable-emails-on-aws/) 
 
 ![Architecture](aws/AWS_architecture.png?raw=true "Architecture")
 
