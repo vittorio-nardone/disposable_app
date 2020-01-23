@@ -15,5 +15,4 @@ aws s3 cp IncomingMailCheckFunction.zip s3://cfvn/disposable/IncomingMailCheckFu
 aws s3 cp StoreEmailFunction.zip s3://cfvn/disposable/StoreEmailFunction.zip
 aws s3 cp CleanUpFunction.zip s3://cfvn/disposable/CleanUpFunction.zip
 
-aws cloudformation create-stack --stack-name DisposableStack --template-url https://s3-eu-west-1.amazonaws.com/cfvn/disposable.yml  --parameters ParameterKey=DomainName,ParameterValue=aws.gotocloud.it ParameterKey=ReCaptchaPrivateKey,ParameterValue=6Lfb-8sUAAAAAOWepgMepRe95dSrsDidBTcDeVGq --capabilities CAPABILITY_IAM
-
+aws cloudformation create-stack --stack-name DisposableStack --template-url https://s3-eu-west-1.amazonaws.com/cfvn/disposable.yml --parameters ParameterKey=DomainName,ParameterValue=<yourdomain> ParameterKey=ReCaptchaPrivateKey,ParameterValue=<yourkey> --capabilities CAPABILITY_IAM
