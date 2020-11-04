@@ -1,6 +1,6 @@
 # Disposable-mail
 
-Online demo -> http://disposable.aws.gotocloud.it/
+Online demo -> https://www.my24h.email
 
 A disposable and customizable email service on your own internet domain, using AWS building blocks. The service is totally serverless.
 CloudFormation template and React/Material-UI client web app source code.
